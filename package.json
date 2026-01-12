@@ -1,0 +1,66 @@
+{
+  "name": "ahurasense",
+  "version": "1.0.1",
+  "description": "Ahurasense Code Assistant CLI - Multi-Agent Orchestration Platform for Autonomous Software Development",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "ahura": "./dist/index.js",
+    "ahurasense": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "README.md",
+    "LICENSE"
+  ],
+  "homepage": "https://ahurasense.com",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "rebuild": "npm run clean && npm run build",
+    "prepublishOnly": "npm run build",
+    "postinstall": "node scripts/postinstall.js || true"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "orchestration",
+    "claude",
+    "gpt",
+    "autonomous",
+    "development",
+    "multi-agent",
+    "cli"
+  ],
+  "author": "Ahurasense",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "boxen": "^8.0.1",
+    "chalk": "^5.3.0",
+    "cli-highlight": "^2.1.11",
+    "cli-spinners": "^3.2.0",
+    "commander": "^12.1.0",
+    "diff": "^7.0.0",
+    "dotenv": "^16.4.7",
+    "inquirer": "^12.3.2",
+    "log-update": "^6.1.0",
+    "marked": "^15.0.6",
+    "marked-terminal": "^7.2.1",
+    "openai": "^4.77.3",
+    "ora": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/cli-spinners": "^0.0.2",
+    "@types/diff": "^6.0.0",
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
