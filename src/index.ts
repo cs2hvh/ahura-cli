@@ -2032,43 +2032,144 @@ async function buildProjectFull(prompt: string, rl: readline.Interface): Promise
       console.log(chalk.white(`  ${aiResult.summary}`));
     }
     
-    // Follow-up options
+    // Follow-up options - check if this is a dev project
+    const hasPackageJson = createdArray.some(f => f.includes('package.json')) || 
+                          fs.existsSync(path.join(currentProject, 'package.json'));
+    const hasNextConfig = fs.existsSync(path.join(currentProject, 'next.config.js')) ||
+                         fs.existsSync(path.join(currentProject, 'next.config.ts'));
+    const hasViteConfig = fs.existsSync(path.join(currentProject, 'vite.config.ts')) ||
+                         fs.existsSync(path.join(currentProject, 'vite.config.js'));
+    const isDevProject = hasPackageJson && (hasNextConfig || hasViteConfig || 
+                        fs.existsSync(path.join(currentProject, 'package.json')));
+    
     console.log('');
     console.log(chalk.cyan.bold('  What next?'));
     console.log(chalk.gray('  ─────────────────────────────────'));
-    console.log(chalk.white('  1. Run tests (find bugs)'));
-    console.log(chalk.white('  2. Run review (quality check)'));
-    console.log(chalk.white('  3. Continue (add more features)'));
+    
+    let optionNum = 1;
+    const optionMap: Map<number, string> = new Map();
+    
+    // Option 1: Run dev server (if applicable)
+    if (isDevProject) {
+      optionMap.set(optionNum, 'dev-server');
+      console.log(chalk.white(`  ${optionNum}. Run dev server`));
+      optionNum++;
+    }
+    
+    // Always offer testing and review
+    optionMap.set(optionNum, 'tests');
+    console.log(chalk.white(`  ${optionNum}. Run tests (find bugs)`));
+    optionNum++;
+    
+    optionMap.set(optionNum, 'review');
+    console.log(chalk.white(`  ${optionNum}. Run review (quality check)`));
+    optionNum++;
+    
+    optionMap.set(optionNum, 'continue');
+    console.log(chalk.white(`  ${optionNum}. Continue (add more features)`));
+    optionNum++;
+    
+    // AI-suggested next steps
     if (aiResult.nextSteps.length > 0) {
-      aiResult.nextSteps.forEach((step, i) => {
-        console.log(chalk.gray(`  ${i + 4}. ${step}`));
+      aiResult.nextSteps.forEach((step) => {
+        optionMap.set(optionNum, step);
+        console.log(chalk.gray(`  ${optionNum}. ${step}`));
+        optionNum++;
       });
     }
     console.log('');
     
     // Get user choice
     const choice = await new Promise<string>((resolve) => {
-      rl.question(chalk.cyan('  Choice (1-3 or describe): '), resolve);
+      rl.question(chalk.cyan('  Choice: '), resolve);
     });
     
     const choiceLower = choice.toLowerCase().trim();
-    const runTests = choiceLower === '1' || choiceLower.includes('test');
-    const runReview = choiceLower === '2' || choiceLower.includes('review');
-    const continueBuilding = choiceLower === '3' || choiceLower.includes('continue');
+    const selectedOption = optionMap.get(parseInt(choice));
     
-    // Handle AI-suggested options (4, 5, etc.)
-    const numChoice = parseInt(choice);
-    if (numChoice >= 4 && numChoice < 4 + aiResult.nextSteps.length) {
-      // User selected an AI suggestion - treat as continue with that prompt
-      const selectedStep = aiResult.nextSteps[numChoice - 4];
+    // Map options to actions
+    const runTests = selectedOption === 'tests' || choiceLower.includes('test');
+    const runReview = selectedOption === 'review' || choiceLower.includes('review');
+    const runDevServer = selectedOption === 'dev-server' || choiceLower.includes('dev') || choiceLower.includes('server');
+    const continueBuilding = selectedOption === 'continue' || choiceLower.includes('continue');
+    
+    // Handle custom/AI-suggested options
+    if (selectedOption && !['tests', 'review', 'dev-server', 'continue'].includes(selectedOption)) {
       console.log('');
-      console.log(chalk.gray(`  → Continuing with: ${selectedStep}`));
-      // Queue the next request (will be handled by main loop)
-      addToHistory('user', selectedStep);
+      console.log(chalk.gray(`  → Continuing with: ${selectedOption}`));
+      addToHistory('user', selectedOption);
     }
     
     // ═══════════════════════════════════════════════════════════
-    // PHASE 3: TESTING (if selected)
+    // DEV SERVER (if selected)
+    // ═══════════════════════════════════════════════════════════
+    if (runDevServer) {
+      console.log('');
+      console.log(chalk.cyan.bold(`  Starting dev server...`));
+      
+      // Detect the package manager and dev command
+      let devCommand = 'npm run dev';
+      const hasYarn = fs.existsSync(path.join(currentProject, 'yarn.lock'));
+      const hasPnpm = fs.existsSync(path.join(currentProject, 'pnpm-lock.yaml'));
+      
+      if (hasYarn) devCommand = 'yarn dev';
+      if (hasPnpm) devCommand = 'pnpm dev';
+      
+      try {
+        // Check if node_modules exists
+        if (!fs.existsSync(path.join(currentProject, 'node_modules'))) {
+          console.log(chalk.yellow('  Installing dependencies first...'));
+          const installCmd = hasYarn ? 'yarn install' : hasPnpm ? 'pnpm install' : 'npm install';
+          require('child_process').execSync(installCmd, { 
+            cwd: currentProject, 
+            stdio: 'inherit',
+            timeout: 120000 
+          });
+        }
+        
+        // Start the dev server
+        console.log(chalk.gray(`  Running: ${devCommand}`));
+        console.log('');
+        
+        const { spawn } = require('child_process');
+        const server = spawn(devCommand.split(' ')[0], devCommand.split(' ').slice(1), {
+          cwd: currentProject,
+          stdio: 'inherit',
+          shell: true
+        });
+        
+        // Wait a moment for server to start, then check
+        await new Promise(r => setTimeout(r, 3000));
+        
+        console.log('');
+        console.log(chalk.green('  ✓ Dev server started!'));
+        console.log(chalk.gray('  Monitor the terminal above for any errors or warnings.'));
+        
+        // Auto-detect common ports
+        const commonPorts = [3000, 5173, 8080, 8000, 5000];
+        const runningPort = commonPorts.find(port => {
+          try {
+            require('net').createConnection({ port, host: 'localhost' }).destroy();
+            return true;
+          } catch {
+            return false;
+          }
+        });
+        
+        if (runningPort) {
+          console.log(chalk.cyan(`  📱 Server running at: http://localhost:${runningPort}`));
+        }
+      } catch (error) {
+        console.log(chalk.red('  ✗ Failed to start dev server'));
+        console.log(chalk.yellow('  Troubleshooting:'));
+        console.log(chalk.gray('    • Check if dependencies are installed: npm install'));
+        console.log(chalk.gray('    • Check package.json for "dev" script'));
+        console.log(chalk.gray('    • Try running manually: ' + devCommand));
+      }
+    }
+    
+    // ═══════════════════════════════════════════════════════════
+    // TESTING (if selected)
     // ═══════════════════════════════════════════════════════════
     let testResult: { passed: boolean; bugs: Array<{severity: string; file: string; description: string}>; securityIssues: unknown[]; summary: string } = { 
       passed: true, 
