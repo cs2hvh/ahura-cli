@@ -80,43 +80,143 @@ export class PlannerAgent extends BaseAgent {
 USER REQUEST: "${userPrompt}"
 PROJECT DIRECTORY: ${projectPath || process.cwd()}
 
-This is a NEW PROJECT in an empty folder. Do NOT scan - just create a plan. Think for requirements then make plan
+You are the MASTER ARCHITECT. Create a DETAILED plan for this NEW PROJECT.
 
-OUTPUT JSON ONLY:
+═══════════════════════════════════════════════════════════════
+ANALYSIS REQUIREMENTS
+═══════════════════════════════════════════════════════════════
+Think through EVERY feature the user mentioned. For a CRM, that includes:
+- Dashboard with analytics
+- Contact/Lead management (CRUD)
+- Company/Organization tracking
+- Deal/Opportunity pipeline
+- Activity logging (calls, emails, meetings)
+- Task management
+- Reports and charts
+- User authentication
+- Settings page
+
+═══════════════════════════════════════════════════════════════
+SCAFFOLDING (creates base structure in CURRENT directory)
+═══════════════════════════════════════════════════════════════
+IMPORTANT: Use "." to create in current directory. NEVER use "cd dir &&" or "||" operators!
+- Next.js: "npx --yes create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --yes"
+- Vite React: "npm create vite@latest . -- --template react-ts"  
+- Express API: null (we create package.json manually)
+
+═══════════════════════════════════════════════════════════════
+TASKS (5-15 tasks for complete implementation)
+═══════════════════════════════════════════════════════════════
+Scaffold only creates boilerplate. YOU MUST create tasks for ALL custom code:
+- Each page/route component
+- Each API endpoint
+- Database models/schemas
+- Services and utilities
+- Authentication setup
+- UI components (tables, forms, charts)
+
+CRITICAL: For complex projects like CRM, e-commerce, dashboards - you need 8-15 tasks minimum!
+
+═══════════════════════════════════════════════════════════════
+OUTPUT: JSON only (no markdown)
+═══════════════════════════════════════════════════════════════
 {
-  "projectName": "project-name",
-  "description": "I'll create a [type] app with [features]. The project will use [tech stack]. Here's my plan...",
+  "projectName": "crm-system",
+  "description": "I'll create a comprehensive CRM system with: 1) Dashboard showing key metrics, 2) Contacts module with full CRUD and search, 3) Companies management, 4) Deals pipeline with drag-drop, 5) Activity tracking, 6) Authentication with NextAuth. Using Next.js 14 with App Router, TypeScript, Tailwind CSS, and Prisma for database.",
   "scaffoldCommand": "npx --yes create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --yes",
-  "postScaffoldCommands": ["npm install package1 package2"],
-  "techStack": { "frontend": ["Next.js", "TypeScript", "Tailwind"], "backend": [], "database": [], "devOps": [] },
-  "architecture": { "overview": "", "components": [], "dataFlow": "" },
-  "fileTree": [{ "name": "page.tsx", "type": "file", "path": "src/app/page.tsx" }],
-  "tasks": [{ "id": "task-1", "title": "Create src/app/page.tsx - Main landing page", "description": "...", "dependencies": [] }],
-  "designDecisions": []
+  "postScaffoldCommands": ["npm install prisma @prisma/client next-auth bcryptjs"],
+  "techStack": { 
+    "frontend": ["Next.js 14", "TypeScript", "Tailwind CSS", "React Hook Form"], 
+    "backend": ["Next.js API Routes", "Prisma ORM"], 
+    "database": ["SQLite/PostgreSQL"], 
+    "devOps": [] 
+  },
+  "architecture": { 
+    "overview": "Full-stack CRM with Next.js App Router, server components for data fetching, client components for interactivity",
+    "components": ["Dashboard", "ContactsTable", "DealsPipeline", "ActivityFeed"],
+    "dataFlow": "Client -> Server Actions -> Prisma -> Database" 
+  },
+  "fileTree": [
+    { "name": "page.tsx", "type": "file", "path": "src/app/page.tsx" },
+    { "name": "contacts", "type": "folder", "path": "src/app/contacts" }
+  ],
+  "tasks": [
+    { "id": "task-1", "title": "Create prisma/schema.prisma - Database schema", "description": "Define Contact, Company, Deal, Activity, User models with relationships", "dependencies": [] },
+    { "id": "task-2", "title": "Create src/app/page.tsx - Dashboard", "description": "Main dashboard with stats cards, recent activities, deals pipeline preview, charts", "dependencies": [] },
+    { "id": "task-3", "title": "Create src/app/contacts/page.tsx - Contacts list", "description": "Data table with search, filter, sort, pagination. Columns: name, email, company, status", "dependencies": ["task-1"] },
+    { "id": "task-4", "title": "Create src/app/contacts/[id]/page.tsx - Contact detail", "description": "Full contact view with edit form, activity timeline, associated deals", "dependencies": ["task-3"] },
+    { "id": "task-5", "title": "Create src/app/api/contacts/route.ts - Contacts API", "description": "GET (list), POST (create) endpoints with validation and error handling", "dependencies": ["task-1"] }
+  ],
+  "designDecisions": [
+    { "decision": "Use Prisma ORM", "rationale": "Type-safe database access, easy migrations, works great with TypeScript" }
+  ]
 }
 
-SCAFFOLDING COMMANDS:
-- Next.js: "npx --yes create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --yes"
-- Vite React: "npm create vite@latest . -- --template react-ts"
-- Express: null (create package.json manually)
-
-RULES:
-- You are master planner - break down the project into clear,scalable, enterprise grade code and reliable solutons.
-- The tasks must cover ALL features mentioned by the user.
-- Use actual file paths in task titles  
-- scaffoldCommand sets up the base project
-- Tasks are for YOUR custom code (pages, components, API routes)
+REMEMBER: Include 5-15 tasks covering ALL features. Scaffold is just the starting point!
 `;
       
-      // Use regular chat for new projects - no tools needed
-      const response = await this.chat(planningPrompt);
+      // Use streaming to show real-time progress
+      let responseContent = '';
+      let lastShownProgress = '';
+      
+      const response = await this.chatStream(planningPrompt, (chunk: string, done: boolean) => {
+        responseContent += chunk;
+        
+        // Extract meaningful progress from what AI is generating
+        if (!done && streamCallback) {
+          // Look for patterns in the response to show progress
+          const content = responseContent;
+          
+          // Check what section the AI is currently writing
+          let currentProgress = '';
+          
+          if (content.includes('"tasks"') && !content.includes('"designDecisions"')) {
+            // Extract the last task title being written
+            const taskMatches = content.match(/"title":\s*"([^"]+)"/g);
+            if (taskMatches && taskMatches.length > 0) {
+              const lastTask = taskMatches[taskMatches.length - 1];
+              const titleMatch = lastTask.match(/"title":\s*"([^"]+)"/);
+              if (titleMatch) {
+                currentProgress = `Planning: ${titleMatch[1].substring(0, 50)}${titleMatch[1].length > 50 ? '...' : ''}`;
+              }
+            }
+          } else if (content.includes('"architecture"') && !content.includes('"fileTree"')) {
+            currentProgress = 'Designing architecture...';
+          } else if (content.includes('"fileTree"') && !content.includes('"tasks"')) {
+            currentProgress = 'Structuring files...';
+          } else if (content.includes('"techStack"') && !content.includes('"architecture"')) {
+            currentProgress = 'Selecting tech stack...';
+          } else if (content.includes('"scaffoldCommand"') && !content.includes('"techStack"')) {
+            currentProgress = 'Configuring scaffold...';
+          } else if (content.includes('"description"') && !content.includes('"scaffoldCommand"')) {
+            currentProgress = 'Writing description...';
+          } else if (content.includes('"projectName"')) {
+            currentProgress = 'Naming project...';
+          }
+          
+          // Only update if progress changed
+          if (currentProgress && currentProgress !== lastShownProgress) {
+            lastShownProgress = currentProgress;
+            streamCallback(`__PROGRESS__${currentProgress}`, false);
+          }
+        }
+      });
       
       if (!response.success) {
-        logger.error('Failed to create project plan', 'planner');
+        logger.error(`Failed to create project plan: ${response.error || 'Unknown error'}`, 'planner');
+        console.log('\n  ❌ Planning failed. Please try again.\n');
         return null;
       }
       
-      return this.parsePlanResponse(response.content, userPrompt);
+      // Debug: log the raw response if parsing fails
+      const result = this.parsePlanResponse(responseContent || response.content, userPrompt);
+      if (!result) {
+        logger.error('Failed to parse plan response. Raw content:', 'planner');
+        console.log('\n  ❌ Could not parse plan. AI response may be malformed.\n');
+        // Log first 500 chars of response for debugging
+        console.log(`  Response preview: ${response.content?.substring(0, 500)}...\n`);
+      }
+      return result;
       
     } else {
       // EXISTING PROJECT - scan first

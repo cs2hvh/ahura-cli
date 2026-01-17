@@ -84,7 +84,7 @@ export const AGENT_CONFIGS: Record<string, AgentConfig> = {
   planner: {
     name: 'Planner_Agent',
     role: 'planner',
-    model: (process.env.AHURA_PLANNER_MODEL || 'anthropic/claude-opus-4.5') as AgentModel,
+    model: (process.env.AHURA_PLANNER_MODEL || 'anthropic/claude-haiku-4.5') as AgentModel,
     systemPrompt: `You are the Planner_Agent - a SENIOR SOFTWARE ARCHITECT creating detailed implementation plans.
 
 You are the MASTER AGENT. Your plan is the blueprint that coders will follow. Be THOROUGH.

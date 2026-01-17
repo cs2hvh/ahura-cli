@@ -1084,6 +1084,11 @@ function getFileIcon(ext: string): string {
 async function generateAISummary(userRequest: string, filesCreated: string[], tasksCompleted: string[]): Promise<{ summary: string; nextSteps: string[] }> {
   if (!coderAgent) return { summary: '', nextSteps: [] };
   
+  // Provide a quick fallback summary if AI fails
+  const fallbackSummary = filesCreated.length > 0 
+    ? `Created ${filesCreated.length} file${filesCreated.length > 1 ? 's' : ''}`
+    : 'Task completed';
+  
   const prompt = `Based on this completed task, provide a brief summary and suggest next steps.
 
 User's request: "${userRequest}"
@@ -1106,14 +1111,14 @@ Keep summary under 12 words. Keep each next step under 4 words. Max 2 next steps
     if (json) {
       const parsed = JSON.parse(json);
       return {
-        summary: parsed.summary || '',
+        summary: parsed.summary || fallbackSummary,
         nextSteps: Array.isArray(parsed.nextSteps) ? parsed.nextSteps.slice(0, 2) : []
       };
     }
   } catch {
     // Fallback silently - don't break the flow
   }
-  return { summary: '', nextSteps: [] };
+  return { summary: fallbackSummary, nextSteps: [] };
 }
 
 async function writeFiles(operations: FileOp[]): Promise<string[]> {
@@ -1587,6 +1592,27 @@ Let me create the files for you:
 
 import { execSync, spawn } from 'child_process';
 
+// ============ POWERSHELL COMPATIBILITY ============
+
+/**
+ * Convert bash-style commands to PowerShell-compatible format
+ * - Replace && with ; for command chaining
+ * - Handle other common bash-isms
+ */
+function toPowerShellCommand(command: string): string {
+  if (process.platform !== 'win32') {
+    return command; // Not Windows, return as-is
+  }
+  
+  // Replace && with ; (PowerShell command separator)
+  let psCommand = command.replace(/\s*&&\s*/g, '; ');
+  
+  // Replace || with ; if ($?) { ... } else { ... } - simplified to just ;
+  psCommand = psCommand.replace(/\s*\|\|\s*/g, '; ');
+  
+  return psCommand;
+}
+
 // ============ GIT INTEGRATION ============
 
 function isGitRepo(): boolean {
@@ -1621,13 +1647,15 @@ function gitAutoCommit(files: string[], message: string): boolean {
 
 // Simple command execution (no retries)
 function runTerminalCommandSimple(command: string, description: string): boolean {
+  const cmd = toPowerShellCommand(command); // Convert for Windows compatibility
   printStep('🖥️', chalk.cyan(description));
-  console.log(chalk.gray(`     $ ${command}`));
+  console.log(chalk.gray(`     $ ${cmd}`));
   
   try {
-    execSync(command, {
+    execSync(cmd, {
       cwd: currentProject,
       stdio: 'inherit',
+      shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/sh',
       env: { ...process.env, FORCE_COLOR: '1' }
     });
     printStep(icons.success, chalk.green('Command completed'));
@@ -1642,20 +1670,23 @@ function runTerminalCommandSimple(command: string, description: string): boolean
 const selfCorrector = new SelfCorrector(2); // max 2 retries
 
 async function runTerminalCommand(command: string, description: string, enableSelfCorrection: boolean = true): Promise<boolean> {
+  const cmd = toPowerShellCommand(command); // Convert for Windows compatibility
+  
   if (!enableSelfCorrection) {
-    return runTerminalCommandSimple(command, description);
+    return runTerminalCommandSimple(cmd, description);
   }
   
   printStep('🖥️', chalk.cyan(description));
-  console.log(chalk.gray(`     $ ${command}`));
+  console.log(chalk.gray(`     $ ${cmd}`));
   
   try {
     // Create executor function
-    const executor = async (cmd: string): Promise<{ success: boolean; output?: string; error?: string }> => {
+    const executor = async (cmdToRun: string): Promise<{ success: boolean; output?: string; error?: string }> => {
       try {
-        const output = execSync(cmd, {
+        const output = execSync(cmdToRun, {
           cwd: currentProject,
           encoding: 'utf-8',
+          shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/sh',
           env: { ...process.env, FORCE_COLOR: '0' },
           maxBuffer: 1024 * 1024 * 10
         });
@@ -1672,7 +1703,7 @@ async function runTerminalCommand(command: string, description: string, enableSe
     const result = await selfCorrector.executeWithCorrection(
       description,  // Task description
       executor,     // Executor function
-      command,      // Initial input (the command)
+      cmd,          // Initial input (the CONVERTED command)
       (attempt: number, action: string) => {
         if (attempt > 1) {
           console.log(chalk.yellow(`  ⟳ Retry ${attempt}: ${action}`));
@@ -1690,9 +1721,10 @@ async function runTerminalCommand(command: string, description: string, enableSe
   } catch (error: any) {
     // Fallback - try once without correction
     try {
-      execSync(command, {
+      execSync(cmd, {
         cwd: currentProject,
         stdio: 'inherit',
+        shell: process.platform === 'win32' ? 'powershell.exe' : '/bin/sh',
         env: { ...process.env, FORCE_COLOR: '1' }
       });
       printStep(icons.success, chalk.green('Command completed'));
@@ -1741,17 +1773,59 @@ async function buildProjectFull(prompt: string, rl: readline.Interface): Promise
       isEmptyProject = true; // Folder doesn't exist or can't read
     }
     
-    // Simple planning indicator
-    printStep(icons.planner, 'Planning...');
+    // ═══════════════════════════════════════════════════════════
+    // INITIAL ACKNOWLEDGMENT - Make it feel responsive
+    // ═══════════════════════════════════════════════════════════
+    console.log(chalk.cyan('━'.repeat(60)));
+    console.log('');
     
-    // Track what planner is doing (minimal output)
+    // Extract key terms from the prompt to acknowledge
+    const promptLower = prompt.toLowerCase();
+    let projectType = 'project';
+    if (promptLower.includes('crm')) projectType = 'CRM system';
+    else if (promptLower.includes('hrms') || promptLower.includes('hr ') || promptLower.includes('employee')) projectType = 'HRMS/Employee Management system';
+    else if (promptLower.includes('ecommerce') || promptLower.includes('e-commerce') || promptLower.includes('shop')) projectType = 'E-commerce platform';
+    else if (promptLower.includes('blog')) projectType = 'Blog platform';
+    else if (promptLower.includes('dashboard')) projectType = 'Dashboard';
+    else if (promptLower.includes('api')) projectType = 'API backend';
+    else if (promptLower.includes('portfolio')) projectType = 'Portfolio website';
+    
+    // Show acknowledgment
+    console.log(chalk.green(`  ✓ Got it! Creating a ${chalk.bold(projectType)}...`));
+    console.log('');
+    
+    // Show what we're about to do
+    if (isEmptyProject) {
+      console.log(chalk.gray(`  📁 New project in: ${path.basename(currentProject)}/`));
+    } else {
+      console.log(chalk.gray(`  📁 Adding to existing project: ${path.basename(currentProject)}/`));
+    }
+    console.log('');
+    
+    // Start planning with progress
+    printStep(icons.planner, chalk.cyan('Planning architecture...'));
+    
+    // Track what planner is doing
     let lastToolShown = '';
     let thinkingInterval: NodeJS.Timeout | null = null;
     let thinkingDots = 0;
     
-    // Streaming callback - minimal, just show current action
+    // Track real-time progress from AI
+    let lastProgress = '';
+    
+    // Streaming callback - show real AI progress
     const plannerStream = (chunk: string, done: boolean) => {
       if (chunk) {
+        // Handle real-time progress from AI generation
+        if (chunk.startsWith('__PROGRESS__')) {
+          const progressInfo = chunk.replace('__PROGRESS__', '');
+          if (progressInfo !== lastProgress) {
+            lastProgress = progressInfo;
+            process.stdout.write(`\r\x1b[K  ${chalk.gray(`${icons.thinking} ${progressInfo}`)}`);
+          }
+          return;
+        }
+        
         // Handle tool progress markers
         if (chunk.startsWith('__TOOL__')) {
           const toolInfo = chunk.replace('__TOOL__', '');
@@ -1791,9 +1865,16 @@ async function buildProjectFull(prompt: string, rl: readline.Interface): Promise
     // Let planner create plan (scans if existing project, skips scan if new)
     let planResult = await plannerAgent.createProjectPlan(prompt, currentProject, plannerStream, isEmptyProject);
     
+    // Clear progress line
+    process.stdout.write('\r\x1b[K');
+    process.stdout.write('\r\x1b[K'); // Clear the line
+    
     if (!planResult) {
       throw new Error('Planner failed to create project plan');
     }
+    
+    // Show success indicator
+    console.log(chalk.green(`  ✓ Plan ready! ${planResult.tasks.length} tasks identified`));
     
     // Show plan to user and ask for confirmation or edits
     let planApproved = false;
@@ -1851,15 +1932,22 @@ async function buildProjectFull(prompt: string, rl: readline.Interface): Promise
         console.log('');
       }
       
-      // Show detailed tasks
-      console.log(chalk.yellow(`  📋 Implementation Plan (${planResult.tasks.length} tasks):`));
+      // Show tasks as a nice todo list
+      console.log(chalk.cyan.bold(`  📋 Tasks (${planResult.tasks.length}):`));
+      console.log(chalk.gray('  ─────────────────────────────────'));
       planResult.tasks.forEach((task, i) => {
-        console.log(chalk.white(`     ${i + 1}. ${task.title}`));
-        // Show task description (truncated)
-        if (task.description) {
-          const taskDesc = task.description.substring(0, 150);
-          console.log(chalk.gray(`        ${taskDesc}${task.description.length > 150 ? '...' : ''}`));
-        }
+        // Extract just the file/component name from title
+        const titleParts = task.title.split(' - ');
+        const fileName = titleParts[0].replace('Create ', '');
+        const purpose = titleParts[1] || '';
+        
+        // Checkbox style with colors
+        const checkbox = chalk.gray('☐');
+        const num = chalk.gray(`${String(i + 1).padStart(2, ' ')}.`);
+        const file = chalk.cyan(fileName);
+        const desc = purpose ? chalk.white(` → ${purpose}`) : '';
+        
+        console.log(`  ${checkbox} ${num} ${file}${desc}`);
       });
       console.log('');
       
@@ -1881,15 +1969,30 @@ async function buildProjectFull(prompt: string, rl: readline.Interface): Promise
         planApproved = true;
         printStep(icons.success, chalk.green('Plan approved!'));
       } else if (choice === 'd' || choice === 'detail') {
-        // Show full task details
+        // Show full task details with better formatting
         console.log('');
         console.log(chalk.cyan('━'.repeat(60)));
-        console.log(chalk.white.bold('  Full Task Details'));
+        console.log(chalk.white.bold('  📝 Full Task Details'));
         console.log(chalk.cyan('━'.repeat(60)));
         planResult.tasks.forEach((task, i) => {
           console.log('');
-          console.log(chalk.yellow(`  Task ${i + 1}: ${task.title}`));
-          console.log(chalk.white(`  ${task.description || 'No description'}`));
+          console.log(chalk.yellow.bold(`  ${i + 1}. ${task.title}`));
+          if (task.description) {
+            // Clean up the description - remove "DETAILED:" prefix
+            let desc = task.description.replace(/^DETAILED:\s*/i, '').trim();
+            // Wrap text nicely
+            const words = desc.split(' ');
+            let line = '     ';
+            for (const word of words) {
+              if (line.length + word.length > 70) {
+                console.log(chalk.gray(line));
+                line = '     ' + word + ' ';
+              } else {
+                line += word + ' ';
+              }
+            }
+            if (line.trim()) console.log(chalk.gray(line));
+          }
         });
         console.log('');
       } else if (choice === 'e' || choice === 'edit') {
@@ -1924,9 +2027,11 @@ async function buildProjectFull(prompt: string, rl: readline.Interface): Promise
       console.log('');
       console.log(chalk.yellow.bold(`  ├─ SCAFFOLDING`));
       
+      // Use simple execution (no AI self-correction) for scaffold commands
       const scaffoldSuccess = await runTerminalCommand(
         planResult.scaffoldCommand,
-        'Running scaffold command...'
+        'Running scaffold command...',
+        false // Disable self-correction for faster execution
       );
       
       if (!scaffoldSuccess) {
@@ -1936,7 +2041,8 @@ async function buildProjectFull(prompt: string, rl: readline.Interface): Promise
       // Run post-scaffold commands (like npm install mysql2)
       if (planResult.postScaffoldCommands && planResult.postScaffoldCommands.length > 0) {
         for (const cmd of planResult.postScaffoldCommands) {
-          await runTerminalCommand(cmd, 'Installing dependencies...');
+          // Disable self-correction for simple npm commands
+          await runTerminalCommand(cmd, 'Installing dependencies...', false);
         }
       }
     }
@@ -1957,9 +2063,15 @@ async function buildProjectFull(prompt: string, rl: readline.Interface): Promise
         if (shouldAbort) break;
         
         taskCount++;
-        printProgress(`Task ${taskCount}/${planResult.tasks.length}: ${task.title}`);
+        const taskLabel = `Task ${taskCount}/${planResult.tasks.length}: ${task.title}`;
+        printProgress(taskLabel);
         
-        const taskResult = await coderAgent.implementTask(task, planResult, designDoc);
+        // Progress callback for real-time status updates
+        const onProgress = (status: string) => {
+          printProgress(`${taskLabel} - ${status}`);
+        };
+        
+        const taskResult = await coderAgent.implementTask(task, planResult, designDoc, onProgress);
         
         if (taskResult.success && taskResult.operations) {
           // Write files immediately as each task completes (streaming)

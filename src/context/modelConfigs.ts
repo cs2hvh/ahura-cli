@@ -15,7 +15,7 @@ export const MODEL_CONFIGS: Record<string, ModelConfig> = {
   // ═══════════════════════════════════════════════════════════
   
   // Claude 4 Series
-  'anthropic/claude-opus-4': {
+  'anthropic/claude-opus-4.5': {
     id: 'anthropic/claude-opus-4',
     name: 'Claude Opus 4',
     provider: 'anthropic',

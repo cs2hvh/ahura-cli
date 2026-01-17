@@ -58,13 +58,18 @@ export class CoderAgent extends BaseAgent {
 
   /**
    * Implement a specific task from the plan
+   * @param onProgress - Optional callback for progress updates
    */
   async implementTask(
     task: Task, 
     plan: ProjectPlan, 
-    designDoc: string
+    designDoc: string,
+    onProgress?: (status: string) => void
   ): Promise<{ success: boolean; operations: FileOperation[]; commands: string[]; error?: string }> {
     logger.info(`Implementing task: ${task.title}`, 'coder');
+    
+    // Report initial progress
+    onProgress?.('Thinking...');
 
     const implementPrompt = `
 You are implementing the following task:
@@ -105,7 +110,22 @@ IMPORTANT: You should minimize output tokens as much as possible while maintaini
 Respond with JSON containing all file operations needed for this task.
 `;
 
-    const response = await this.chat(implementPrompt);
+    // Use streaming to show progress (throttled)
+    let responseContent = '';
+    let lastReportedLength = 0;
+    const response = await this.chatStream(
+      implementPrompt,
+      (chunk: string, done: boolean) => {
+        responseContent += chunk;
+        if (!done) {
+          // Only update progress every 500 chars to avoid spam
+          if (responseContent.length - lastReportedLength >= 500) {
+            lastReportedLength = responseContent.length;
+            onProgress?.(`Writing code... (${Math.round(responseContent.length / 1000)}k chars)`);
+          }
+        }
+      }
+    );
     
     if (!response.success) {
       return {
@@ -115,9 +135,11 @@ Respond with JSON containing all file operations needed for this task.
         error: response.error
       };
     }
+    
+    onProgress?.('Processing response...');
 
     try {
-      const output = this.parseJsonResponse<CoderOutput>(response.content);
+      const output = this.parseJsonResponse<CoderOutput>(responseContent || response.content);
       
       if (!output?.operations) {
         return {

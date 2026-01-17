@@ -314,6 +314,13 @@ export function adaptCommand(command: string): string {
   if (os === 'windows') {
     // Convert Unix-style commands to Windows equivalents
     return command
+      // CRITICAL: && is not valid in PowerShell, use ; instead
+      .replace(/\s*&&\s*/g, '; ')
+      // CRITICAL: || is not valid in PowerShell - convert to simple ;
+      // (the "run if previous failed" logic is lost, but commands will run)
+      .replace(/\s*\|\|\s*/g, '; ')
+      // 2>$null is bash syntax, use 2>$null or -ErrorAction SilentlyContinue
+      .replace(/\s+2>\s*\/dev\/null/g, ' 2>$null')
       // ls -> dir (but prefer Get-ChildItem in PS)
       .replace(/^ls\s/i, 'Get-ChildItem ')
       .replace(/^ls$/i, 'Get-ChildItem')
