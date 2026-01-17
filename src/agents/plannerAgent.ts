@@ -51,47 +51,158 @@ export class PlannerAgent extends BaseAgent {
 
   /**
    * Create a detailed project plan from a user prompt
+   * Detects if this is a new project or modification of existing project
+   * @param userPrompt - The user's request
+   * @param projectPath - Path to the current project directory
+   * @param onChunk - Callback for streaming output
+   * @param isEmptyProject - Whether the project directory is empty/new
    */
-  async createProjectPlan(userPrompt: string): Promise<ProjectPlan | null> {
+  async createProjectPlan(
+    userPrompt: string, 
+    projectPath?: string, 
+    onChunk?: (chunk: string, done: boolean) => void,
+    isEmptyProject?: boolean
+  ): Promise<ProjectPlan | null> {
     logger.section('Planning Phase');
-    logger.info('Analyzing requirements and creating project plan...', 'planner');
 
-    const planningPrompt = `
-You are creating a MINIMAL project plan for the following user request:
+    // Default streaming callback if not provided
+    const streamCallback = onChunk || ((chunk: string, done: boolean) => {
+      if (chunk) process.stdout.write(chunk);
+    });
 
-"${userPrompt}"
+    let planningPrompt: string;
+    
+    if (isEmptyProject) {
+      // NEW PROJECT - no scanning needed
+      logger.info('Creating plan for new project...', 'planner');
+      
+      planningPrompt = `
+USER REQUEST: "${userPrompt}"
+PROJECT DIRECTORY: ${projectPath || process.cwd()}
 
-IMPORTANT RULES:
-1. If using a framework (Next.js, React, Vue, Angular, etc.), ALWAYS specify scaffoldCommand
-2. Only create tasks for CUSTOM code the user explicitly asked for
-3. Maximum 2-5 tasks for most requests - keep it minimal
-4. Do NOT add features that weren't requested (auth, logging, Docker, etc.)
+This is a NEW PROJECT in an empty folder. Do NOT scan - just create a plan. Think for requirements then make plan
 
-Consider:
-1. Does this need a framework scaffold command? (npx create-next-app, create-react-app, etc.)
-2. What SPECIFIC custom code did the user ask for?
-3. Keep tasks focused and minimal
+OUTPUT JSON ONLY:
+{
+  "projectName": "project-name",
+  "description": "I'll create a [type] app with [features]. The project will use [tech stack]. Here's my plan...",
+  "scaffoldCommand": "npx --yes create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --yes",
+  "postScaffoldCommands": ["npm install package1 package2"],
+  "techStack": { "frontend": ["Next.js", "TypeScript", "Tailwind"], "backend": [], "database": [], "devOps": [] },
+  "architecture": { "overview": "", "components": [], "dataFlow": "" },
+  "fileTree": [{ "name": "page.tsx", "type": "file", "path": "src/app/page.tsx" }],
+  "tasks": [{ "id": "task-1", "title": "Create src/app/page.tsx - Main landing page", "description": "...", "dependencies": [] }],
+  "designDecisions": []
+}
 
-Example - If user asks "Next.js app with mysql2 connection":
-- scaffoldCommand: "npx create-next-app@latest . --typescript --eslint --app --src-dir --import-alias '@/*'"
-- postScaffoldCommands: ["npm install mysql2"]
-- tasks: Only 2-3 tasks:
-  1. Create lib/db.ts with mysql2 connection pool
-  2. Create sample API route using the connection
-  3. Update README with connection instructions
+SCAFFOLDING COMMANDS:
+- Next.js: "npx --yes create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --yes"
+- Vite React: "npm create vite@latest . -- --template react-ts"
+- Express: null (create package.json manually)
 
-Respond with JSON following your output format. Include scaffoldCommand if a framework is needed.
+RULES:
+- You are master planner - break down the project into clear,scalable, enterprise grade code and reliable solutons.
+- The tasks must cover ALL features mentioned by the user.
+- Use actual file paths in task titles  
+- scaffoldCommand sets up the base project
+- Tasks are for YOUR custom code (pages, components, API routes)
+`;
+      
+      // Use regular chat for new projects - no tools needed
+      const response = await this.chat(planningPrompt);
+      
+      if (!response.success) {
+        logger.error('Failed to create project plan', 'planner');
+        return null;
+      }
+      
+      return this.parsePlanResponse(response.content, userPrompt);
+      
+    } else {
+      // EXISTING PROJECT - scan first
+      logger.info('Scanning existing project before planning...', 'planner');
+      
+      planningPrompt = `
+USER REQUEST: "${userPrompt}"
+WORKING DIRECTORY: ${projectPath || process.cwd()}
+
+You are the MASTER ARCHITECT. Create a DETAILED implementation plan.
+
+═══════════════════════════════════════════════════════════════
+STEP 1: THOROUGH PROJECT SCAN
+═══════════════════════════════════════════════════════════════
+- Use list_directory to see ALL folders
+- Use read_file on EVERY relevant file (not just a few)
+- Understand the complete architecture before planning
+
+═══════════════════════════════════════════════════════════════
+STEP 2: DETAILED PLANNING (be comprehensive!)
+═══════════════════════════════════════════════════════════════
+Your plan must include:
+
+1. DESCRIPTION - Detailed explanation of:
+   • Current architecture you discovered
+   • Database schema/tables needed (if applicable)
+   • Authentication flow (if applicable)
+   • API endpoints to create/modify
+   • State management changes
+   • Component hierarchy
+  • Optimisations and security considerations api security, data validation, performance,vulnerabilities 
+
+
+2. TASKS (4-10 for  features) - Each must have:
+   • Clear file path in title
+   • DETAILED description with:
+     - What functions/components to create
+     - What patterns/approaches to use
+     - Integration points with existing code
+     - Error handling requirements
+
+3. DESIGN DECISIONS - Why you chose this approach (not necessary when easy tasks)
+
+═══════════════════════════════════════════════════════════════
+OUTPUT: JSON only (no markdown)
+═══════════════════════════════════════════════════════════════
+{
+  "projectName": "string",
+  "description": "COMPREHENSIVE: Current architecture: [detail]. For [feature], implementation strategy: [detailed]. Database schema: [tables with columns]. Auth flow: [step by step]. API: [endpoints with methods].",
+  "scaffoldCommand": null,
+  "postScaffoldCommands": ["npm install pkg1 pkg2"],
+  "techStack": { "frontend": [], "backend": [], "database": [], "devOps": [] },
+  "architecture": { 
+    "overview": "Detailed architecture",
+    "components": ["Component - detailed purpose"],
+    "dataFlow": "Complete data flow explanation"
+  },
+  "fileTree": [{ "name": "file.ts", "type": "file", "path": "src/file.ts" }],
+  "tasks": [{
+    "id": "task-1",
+    "title": "Create src/lib/supabase.ts",
+    "description": "DETAILED: Implement Supabase client configuration. Create: 1) createBrowserClient() for client components, 2) createServerClient() for server components/API routes using cookies(). Include TypeScript types for Database schema. Export both clients and types.",
+    "dependencies": []
+  }],
+  "designDecisions": [{ "decision": "string", "rationale": "string" }]
+}
 `;
 
-    const response = await this.chat(planningPrompt);
-    
-    if (!response.success) {
-      logger.error('Failed to create project plan', 'planner');
-      return null;
+      // Use chatWithTools so planner can scan the project
+      const response = await this.chatWithTools(planningPrompt, streamCallback, undefined, true);
+      
+      if (!response.success) {
+        logger.error('Failed to create project plan', 'planner');
+        return null;
+      }
+      
+      return this.parsePlanResponse(response.content, userPrompt);
     }
+  }
 
+  /**
+   * Parse the planner's response into a ProjectPlan
+   */
+  private parsePlanResponse(content: string, userPrompt: string): ProjectPlan | null {
     try {
-      const planData = this.parseJsonResponse<PlannerOutput>(response.content);
+      const planData = this.parseJsonResponse<PlannerOutput>(content);
       
       if (!planData) {
         logger.error('Could not parse planner response as JSON', 'planner');
@@ -122,6 +233,79 @@ Respond with JSON following your output format. Include scaffoldCommand if a fra
       return plan;
     } catch (error) {
       logger.error(`Error parsing plan: ${error}`, 'planner');
+      return null;
+    }
+  }
+
+  /**
+   * Revise an existing plan based on user feedback
+   */
+  async revisePlan(currentPlan: ProjectPlan, userFeedback: string): Promise<ProjectPlan | null> {
+    logger.info('Revising plan based on user feedback...', 'planner');
+
+    const revisionPrompt = `
+You created this project plan:
+
+Project: ${currentPlan.projectName}
+Description: ${currentPlan.description}
+Tech Stack: ${JSON.stringify(currentPlan.techStack)}
+${currentPlan.scaffoldCommand ? `Scaffold: ${currentPlan.scaffoldCommand}` : ''}
+
+Tasks:
+${currentPlan.tasks.map((t, i) => `${i + 1}. ${t.title}: ${t.description}`).join('\n')}
+
+The user wants to make changes:
+"${userFeedback}"
+
+Please revise the plan according to the user's feedback. Keep the same JSON structure but update the relevant parts.
+
+Respond with the complete revised plan in JSON format:
+{
+  "projectName": "...",
+  "description": "...",
+  "scaffoldCommand": "..." or null,
+  "postScaffoldCommands": [...],
+  "techStack": {...},
+  "architecture": { "overview": "...", "components": [...], "dataFlow": "..." },
+  "fileTree": [...],
+  "tasks": [
+    { "id": "task-1", "title": "...", "description": "...", "dependencies": [] }
+  ]
+}
+`;
+
+    const response = await this.chat(revisionPrompt);
+    
+    if (!response.success) {
+      logger.error('Failed to revise plan', 'planner');
+      return null;
+    }
+
+    try {
+      const planData = this.parseJsonResponse<PlannerOutput>(response.content);
+      
+      if (!planData) {
+        logger.error('Could not parse revised plan as JSON', 'planner');
+        return null;
+      }
+
+      const revisedPlan: ProjectPlan = {
+        projectName: planData.projectName || currentPlan.projectName,
+        description: planData.description || currentPlan.description,
+        scaffoldCommand: planData.scaffoldCommand ?? currentPlan.scaffoldCommand,
+        postScaffoldCommands: planData.postScaffoldCommands || currentPlan.postScaffoldCommands,
+        architecture: planData.architecture || currentPlan.architecture,
+        tasks: this.convertTasks(planData.tasks || []),
+        fileTree: planData.fileTree || currentPlan.fileTree,
+        techStack: planData.techStack || currentPlan.techStack,
+        createdAt: currentPlan.createdAt,
+        status: 'planning'
+      };
+
+      logger.success(`Plan revised: ${revisedPlan.projectName}`);
+      return revisedPlan;
+    } catch (error) {
+      logger.error(`Error parsing revised plan: ${error}`, 'planner');
       return null;
     }
   }
@@ -323,31 +507,33 @@ ${plan.tasks.map(t => `| ${t.id} | ${t.title} | ${t.status} | ${t.dependencies.j
    * Parse JSON from potentially markdown-wrapped response
    */
   private parseJsonResponse<T>(content: string): T | null {
+    // Clean up the content
+    let cleaned = content.trim();
+    
+    // Remove markdown code blocks
+    cleaned = cleaned.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
+    
+    // Remove any text before the first { or after the last }
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+    }
+    
     try {
-      // Try direct parse first
-      return JSON.parse(content) as T;
-    } catch {
-      // Try to extract JSON from markdown code blocks
-      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (jsonMatch) {
-        try {
-          return JSON.parse(jsonMatch[1]) as T;
-        } catch {
-          // Fall through to null return
-        }
-      }
-      
-      // Try to find JSON object in the content
-      const objectMatch = content.match(/\{[\s\S]*\}/);
-      if (objectMatch) {
-        try {
-          return JSON.parse(objectMatch[0]) as T;
-        } catch {
-          // Fall through to null return
-        }
+      return JSON.parse(cleaned) as T;
+    } catch (e) {
+      // Try to fix common JSON issues
+      try {
+        // Replace single quotes with double quotes
+        const fixed = cleaned.replace(/'/g, '"');
+        return JSON.parse(fixed) as T;
+      } catch {
+        logger.error(`JSON parse failed: ${cleaned.slice(0, 200)}...`, 'planner');
+        return null;
       }
     }
-    return null;
   }
 
   /**

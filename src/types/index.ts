@@ -37,6 +37,7 @@ export interface AgentResponse {
   tokensUsed?: number;
   duration?: number;
   error?: string;
+  toolsUsed?: string[];
 }
 
 // ============ Task & Project Types ============

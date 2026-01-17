@@ -49,7 +49,8 @@ export class Renderer {
   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
 `);
     console.log(logo);
-    console.log(chalk.gray('  Self-Agent Dev Swarm • Type /help for commands\n'));
+    console.log(chalk.gray('  Ahurasense AI') + chalk.white.bold(' • AI-Powered Code Generation'));
+    console.log(chalk.dim('  Type /help for commands\n'));
   }
 
   /**
@@ -57,13 +58,12 @@ export class Renderer {
    */
   welcome(): void {
     console.log(boxen(
-      chalk.white('Welcome to ') + chalk.cyan.bold('Ahurasense') + chalk.white('!\n\n') +
-      chalk.gray('Just type what you want to build and press Enter.\n') +
-      chalk.gray('The AI agents will plan, code, test, and deliver.\n\n') +
+      chalk.white('Welcome to ') + chalk.cyan.bold('Ahurasense AI') + chalk.white('!\n\n') +
+      chalk.gray('Describe what you want to build and I will create it for you.\n\n') +
       chalk.dim('Examples:\n') +
       chalk.cyan('  "Build a todo app with React"\n') +
       chalk.cyan('  "Create a REST API with authentication"\n') +
-      chalk.cyan('  "Make a CLI tool for file management"'),
+      chalk.cyan('  "Fix the bug in user.ts"'),
       {
         padding: 1,
         margin: { top: 0, bottom: 1, left: 2, right: 2 },
