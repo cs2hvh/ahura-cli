@@ -80,10 +80,10 @@ export default function Gallery() {
   };
 
   return (
-    <section id="gallery" className="py-20 md:py-32 bg-gray-900 text-white">
+    <section id="gallery" className="py-20 md:py-32 bg-gradient-to-b from-black via-purple-950/50 to-black">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-extrabold mb-4">
+          <h2 className="text-4xl md:text-5xl lg:text-6xl font-extrabold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400">
             Game Gallery
           </h2>
           <p className="text-lg md:text-xl text-gray-300 max-w-2xl mx-auto">
@@ -92,7 +92,7 @@ export default function Gallery() {
         </div>
 
         <div className="relative">
-          <div className="relative h-[400px] md:h-[500px] lg:h-[600px] overflow-hidden rounded-2xl bg-gray-800">
+          <div className="relative h-[400px] md:h-[500px] lg:h-[600px] overflow-hidden rounded-2xl bg-black/50 border border-purple-500/30 shadow-2xl shadow-purple-500/20">
             <AnimatePresence initial={false} custom={direction}>
               <motion.div
                 key={currentIndex}
@@ -122,7 +122,7 @@ export default function Gallery() {
                 className="absolute inset-0 flex flex-col items-center justify-center"
               >
                 <div className="relative w-full h-full">
-                  <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent z-10"></div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
                   <Image
                     src={GALLERY[currentIndex].imagePath}
                     alt={GALLERY[currentIndex].title}
@@ -132,7 +132,7 @@ export default function Gallery() {
                   />
                 </div>
                 <div className="absolute bottom-0 left-0 right-0 p-8 z-20">
-                  <h3 className="text-2xl md:text-3xl lg:text-4xl font-bold mb-2">
+                  <h3 className="text-2xl md:text-3xl lg:text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
                     {GALLERY[currentIndex].title}
                   </h3>
                   <p className="text-base md:text-lg text-gray-300">
@@ -145,7 +145,7 @@ export default function Gallery() {
 
           <button
             onClick={handlePrevious}
-            className="absolute left-4 top-1/2 -translate-y-1/2 z-30 bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white p-3 rounded-full transition-all duration-200 hover:scale-110"
+            className="absolute left-4 top-1/2 -translate-y-1/2 z-30 bg-purple-600/20 hover:bg-purple-600/40 backdrop-blur-sm text-white p-3 rounded-full transition-all duration-200 hover:scale-110 border border-purple-500/30"
             aria-label="Previous image"
           >
             <HiChevronLeft className="text-2xl" />
@@ -153,7 +153,7 @@ export default function Gallery() {
 
           <button
             onClick={handleNext}
-            className="absolute right-4 top-1/2 -translate-y-1/2 z-30 bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white p-3 rounded-full transition-all duration-200 hover:scale-110"
+            className="absolute right-4 top-1/2 -translate-y-1/2 z-30 bg-purple-600/20 hover:bg-purple-600/40 backdrop-blur-sm text-white p-3 rounded-full transition-all duration-200 hover:scale-110 border border-purple-500/30"
             aria-label="Next image"
           >
             <HiChevronRight className="text-2xl" />
@@ -169,8 +169,8 @@ export default function Gallery() {
                 }}
                 className={`h-2 rounded-full transition-all duration-300 ${
                   index === currentIndex
-                    ? 'w-8 bg-white'
-                    : 'w-2 bg-white/40 hover:bg-white/60'
+                    ? 'w-8 bg-gradient-to-r from-purple-500 to-pink-500 shadow-lg shadow-purple-500/50'
+                    : 'w-2 bg-purple-500/40 hover:bg-purple-500/60'
                 }`}
                 aria-label={`Go to slide ${index + 1}`}
               />

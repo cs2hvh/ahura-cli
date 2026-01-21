@@ -52,14 +52,17 @@ export default function Hero() {
   return (
     <section
       id="home"
-      className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400"
+      className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-black via-purple-950 to-black"
     >
-      <div className="absolute inset-0 bg-black/20"></div>
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-purple-900/20 via-transparent to-transparent"></div>
       
       <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-1/2 -left-1/2 w-full h-full bg-purple-500/30 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute -bottom-1/2 -right-1/2 w-full h-full bg-pink-500/30 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/30 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-600/30 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+        <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-cyan-600/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
       </div>
+
+      <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10"></div>
 
       <motion.div
         variants={containerVariants}
@@ -69,21 +72,21 @@ export default function Hero() {
       >
         <motion.h1
           variants={fadeInUpVariants}
-          className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-extrabold text-white mb-6 leading-tight"
+          className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 mb-6 leading-tight animate-neonGlow"
         >
           {GAME_INFO.title}
         </motion.h1>
 
         <motion.p
           variants={fadeInUpVariants}
-          className="text-xl sm:text-2xl md:text-3xl text-white/90 font-semibold mb-4 max-w-3xl mx-auto"
+          className="text-xl sm:text-2xl md:text-3xl text-purple-300 font-semibold mb-4 max-w-3xl mx-auto"
         >
           {GAME_INFO.tagline}
         </motion.p>
 
         <motion.p
           variants={fadeInUpVariants}
-          className="text-base sm:text-lg md:text-xl text-white/80 mb-12 max-w-2xl mx-auto leading-relaxed"
+          className="text-base sm:text-lg md:text-xl text-gray-300 mb-12 max-w-2xl mx-auto leading-relaxed"
         >
           {GAME_INFO.description}
         </motion.p>
@@ -95,14 +98,14 @@ export default function Hero() {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="bg-white text-purple-600 px-8 py-4 rounded-full font-bold text-lg shadow-2xl hover:shadow-white/50 transition-shadow duration-300 w-full sm:w-auto"
+            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-8 py-4 rounded-full font-bold text-lg shadow-2xl shadow-purple-500/50 hover:shadow-purple-500/80 transition-all duration-300 w-full sm:w-auto neon-border"
           >
             {CTA_BUTTONS.primary}
           </motion.button>
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="bg-transparent border-2 border-white text-white px-8 py-4 rounded-full font-bold text-lg hover:bg-white hover:text-purple-600 transition-all duration-300 w-full sm:w-auto"
+            className="bg-transparent border-2 border-purple-500 text-purple-400 px-8 py-4 rounded-full font-bold text-lg hover:bg-purple-500 hover:text-white hover:shadow-lg hover:shadow-purple-500/50 transition-all duration-300 w-full sm:w-auto"
           >
             {CTA_BUTTONS.secondary}
           </motion.button>
@@ -116,8 +119,8 @@ export default function Hero() {
         onClick={handleScrollToFeatures}
       >
         <div className="flex flex-col items-center">
-          <span className="text-white/80 text-sm font-medium mb-2">Scroll to explore</span>
-          <HiChevronDown className="text-white text-3xl" />
+          <span className="text-purple-300 text-sm font-medium mb-2">Scroll to explore</span>
+          <HiChevronDown className="text-purple-400 text-3xl" />
         </div>
       </motion.div>
     </section>

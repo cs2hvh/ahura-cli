@@ -760,6 +760,11 @@ export abstract class BaseAgent {
         // Add assistant message with tool calls
         messages.push(assistantMessage);
 
+        // Track files created/modified for summary
+        const filesCreated: string[] = [];
+        const filesModified: string[] = [];
+        const commandsRun: string[] = [];
+
         // Process each tool call
         for (const toolCall of assistantMessage.tool_calls) {
           const toolName = toolCall.function.name;
@@ -779,16 +784,85 @@ export abstract class BaseAgent {
             ? (typeof toolResult.data === 'string' ? toolResult.data : JSON.stringify(toolResult.data, null, 2))
             : `Error: ${toolResult.error}`;
           
+          // Helper for relative paths from cwd (like Claude Code)
+          const getRelPath = (p: string) => {
+            if (!p) return 'file';
+            const cwd = process.cwd().replace(/\\/g, '/');
+            const norm = p.replace(/\\/g, '/');
+            if (norm.startsWith(cwd)) {
+              const rel = norm.substring(cwd.length);
+              return rel.startsWith('/') ? rel.substring(1) : rel;
+            }
+            // Find common base
+            const cwdParts = cwd.split('/').filter(x => x);
+            const fileParts = norm.split('/').filter(x => x);
+            let common = 0;
+            for (let i = 0; i < Math.min(cwdParts.length, fileParts.length); i++) {
+              if (cwdParts[i].toLowerCase() === fileParts[i].toLowerCase()) common = i + 1;
+              else break;
+            }
+            if (common > 0) return fileParts.slice(common).join('/');
+            return fileParts.slice(-3).join('/');
+          };
+          
+          // Track what was done
+          if (toolName === 'write_file' && toolResult.success) {
+            const filePath = toolArgs.path || toolArgs.file_path || 'file';
+            // Check if file existed (modified) or was new (created)
+            if (resultStr.includes('created') || resultStr.includes('Created')) {
+              filesCreated.push(filePath);
+            } else {
+              filesModified.push(filePath);
+            }
+          } else if (toolName === 'run_command' && toolResult.success) {
+            commandsRun.push(toolArgs.command || '');
+          }
+          
           // Add tool result to messages
           messages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
             content: resultStr.substring(0, 8000) // Limit tool output
           });
+          
+          // Show immediate feedback after file operations with proper path
+          if (toolResult.success) {
+            const filePath = toolArgs.path || toolArgs.file_path || '';
+            const relPath = getRelPath(filePath);
+            
+            if (toolName === 'write_file') {
+              const isNew = resultStr.includes('created') || resultStr.includes('Created');
+              onChunk(`__TOOL__${isNew ? '✅ Created' : '📝 Updated'}: ${relPath}`, false);
+            } else if (toolName === 'delete_file') {
+              onChunk(`__TOOL__🗑️  Deleted: ${relPath}`, false);
+            } else if (toolName === 'rename_file' || toolName === 'move_file') {
+              const toPath = toolArgs.to || toolArgs.destination || toolArgs.new_path || '';
+              onChunk(`__TOOL__📦 Moved: ${relPath} → ${getRelPath(toPath)}`, false);
+            } else if (toolName === 'copy_file') {
+              const destPath = toolArgs.destination || toolArgs.to || '';
+              onChunk(`__TOOL__📋 Copied: ${relPath} → ${getRelPath(destPath)}`, false);
+            } else if (toolName === 'create_directory' || toolName === 'mkdir') {
+              onChunk(`__TOOL__📁 Created folder: ${relPath}/`, false);
+            }
+          }
         }
         
-        // Show that we're generating response after tools
-        onChunk('__TOOL__Generating response from gathered context...', false);
+        // Show what's happening next based on tools used
+        const lastTool = toolsUsed[toolsUsed.length - 1];
+        const hasWritten = toolsUsed.includes('write_file');
+        const onlyReading = toolsUsed.every(t => t === 'read_file' || t === 'list_directory' || t === 'search_in_files' || t === 'file_exists');
+        
+        if (lastTool === 'run_command') {
+          onChunk('__TOOL__✅ Command completed', false);
+        } else if (onlyReading) {
+          // Only read operations - we're analyzing, not changing
+          onChunk('__TOOL__🧠 Analyzing...', false);
+        } else if (hasWritten && lastTool !== 'write_file') {
+          // Already wrote something, continuing with other work
+          onChunk('__TOOL__🧠 Continuing...', false);
+        } else if (!hasWritten) {
+          onChunk('__TOOL__🧠 Thinking...', false);
+        }
         
         // Continue loop to get response after tool results
         continue;
@@ -797,8 +871,8 @@ export abstract class BaseAgent {
       // No more tool calls - stream the final response
       if (assistantMessage.content) {
         content = assistantMessage.content;
-        // Signal that response generation is complete
-        onChunk('__TOOL__Writing plan...', false);
+        // Signal that response is ready
+        onChunk('__TOOL__✨ Done', false);
         // Don't stream character-by-character as it's too slow
         // Just send the content directly
         onChunk(content, false);
@@ -871,10 +945,62 @@ export abstract class BaseAgent {
             tool_call_id: toolCall.id,
             content: resultStr.substring(0, 8000)
           });
+          
+          // Helper for relative paths from cwd (like Claude Code)
+          const getRelPath = (p: string) => {
+            if (!p) return 'file';
+            const cwd = process.cwd().replace(/\\/g, '/');
+            const norm = p.replace(/\\/g, '/');
+            if (norm.startsWith(cwd)) {
+              const rel = norm.substring(cwd.length);
+              return rel.startsWith('/') ? rel.substring(1) : rel;
+            }
+            // Find common base
+            const cwdParts = cwd.split('/').filter(x => x);
+            const fileParts = norm.split('/').filter(x => x);
+            let common = 0;
+            for (let i = 0; i < Math.min(cwdParts.length, fileParts.length); i++) {
+              if (cwdParts[i].toLowerCase() === fileParts[i].toLowerCase()) common = i + 1;
+              else break;
+            }
+            if (common > 0) return fileParts.slice(common).join('/');
+            return fileParts.slice(-3).join('/');
+          };
+          
+          // Show immediate feedback after file operations with proper path
+          if (toolResult.success) {
+            const filePath = toolArgs.path || toolArgs.file_path || '';
+            const relPath = getRelPath(filePath);
+            
+            if (toolName === 'write_file') {
+              const isNew = resultStr.includes('created') || resultStr.includes('Created');
+              onChunk(`__TOOL__${isNew ? '✅ Created' : '📝 Updated'}: ${relPath}`, false);
+            } else if (toolName === 'delete_file') {
+              onChunk(`__TOOL__🗑️  Deleted: ${relPath}`, false);
+            } else if (toolName === 'rename_file' || toolName === 'move_file') {
+              const toPath = toolArgs.to || toolArgs.destination || toolArgs.new_path || '';
+              onChunk(`__TOOL__📦 Moved: ${relPath} → ${getRelPath(toPath)}`, false);
+            } else if (toolName === 'copy_file') {
+              const destPath = toolArgs.destination || toolArgs.to || '';
+              onChunk(`__TOOL__📋 Copied: ${relPath} → ${getRelPath(destPath)}`, false);
+            } else if (toolName === 'create_directory' || toolName === 'mkdir') {
+              onChunk(`__TOOL__📁 Created folder: ${relPath}/`, false);
+            }
+          }
         }
         
-        // Show that we're generating response after tools
-        onChunk('__TOOL__Generating response from gathered context...', false);
+        // Show what's happening next based on tools used
+        const lastToolUsed = toolsUsed[toolsUsed.length - 1];
+        const hasWrittenFile = toolsUsed.includes('write_file');
+        const onlyReadOps = toolsUsed.every(t => t === 'read_file' || t === 'list_directory' || t === 'search_in_files' || t === 'file_exists');
+        
+        if (lastToolUsed === 'run_command') {
+          onChunk('__TOOL__✅ Command completed', false);
+        } else if (onlyReadOps) {
+          onChunk('__TOOL__🧠 Analyzing...', false);
+        } else if (!hasWrittenFile) {
+          onChunk('__TOOL__🧠 Thinking...', false);
+        }
         
         continue;
       }
@@ -882,7 +1008,7 @@ export abstract class BaseAgent {
       if (assistantMessage.content) {
         content = assistantMessage.content;
         // Signal progress and send content directly (not char-by-char)
-        onChunk('__TOOL__Writing plan...', false);
+        onChunk('__TOOL__✨ Done', false);
         onChunk(content, false);
       }
       
@@ -897,29 +1023,88 @@ export abstract class BaseAgent {
    * Get human-readable progress info for a tool call
    */
   private getToolProgressInfo(toolName: string, args: Record<string, any>): string | null {
+    // Helper to get relative path from current working directory (like Claude Code)
+    const getRelativePath = (filePath: string): string => {
+      if (!filePath) return 'file';
+      const cwd = process.cwd().replace(/\\/g, '/');
+      const normalized = filePath.replace(/\\/g, '/');
+      
+      // If path starts with cwd, show relative path from there
+      if (normalized.startsWith(cwd)) {
+        const relative = normalized.substring(cwd.length);
+        return relative.startsWith('/') ? relative.substring(1) : relative;
+      }
+      
+      // Try to find common base and show relative
+      const cwdParts = cwd.split('/').filter(p => p);
+      const fileParts = normalized.split('/').filter(p => p);
+      
+      // Find common prefix length
+      let commonLen = 0;
+      for (let i = 0; i < Math.min(cwdParts.length, fileParts.length); i++) {
+        if (cwdParts[i].toLowerCase() === fileParts[i].toLowerCase()) {
+          commonLen = i + 1;
+        } else {
+          break;
+        }
+      }
+      
+      // If we found common base, show relative path
+      if (commonLen > 0) {
+        return fileParts.slice(commonLen).join('/');
+      }
+      
+      // Fallback: show last few segments
+      return fileParts.slice(-3).join('/');
+    };
+
     switch (toolName) {
       case 'list_directory':
         const dir = args.path || args.directory || '.';
-        return `📂 Scanning ${dir}`;
+        const relDir = getRelativePath(dir);
+        return `📂 Scanning ${relDir === '.' || !relDir ? './' : relDir + '/'}`;
       case 'read_file':
         const file = args.path || args.file_path || args.filename;
-        return file ? `📄 Reading ${file}` : null;
+        if (file) {
+          return `📖 Reading ${getRelativePath(file)}`;
+        }
+        return null;
       case 'search_in_files':
         const pattern = args.pattern || args.query || args.search;
-        return pattern ? `🔍 Searching: ${pattern}` : '🔍 Searching files';
+        return pattern ? `🔍 Searching: "${pattern.substring(0, 30)}${pattern.length > 30 ? '...' : ''}"` : '🔍 Searching files...';
       case 'file_exists':
-        return `✓ Checking ${args.path || 'file'}`;
+        const checkFile = args.path || 'file';
+        return `🔍 Checking ${getRelativePath(checkFile)}`;
       case 'write_file':
-        return `✍️ Writing ${args.path || args.file_path || 'file'}`;
+        const writeFile = args.path || args.file_path || 'file';
+        return `✏️  Writing ${getRelativePath(writeFile)}`;
+      case 'delete_file':
+        const deleteFile = args.path || args.file_path || 'file';
+        return `🗑️  Deleting ${getRelativePath(deleteFile)}`;
+      case 'rename_file':
+      case 'move_file':
+        const fromFile = args.from || args.source || args.old_path || 'file';
+        const toFile = args.to || args.destination || args.new_path || 'file';
+        return `📦 Moving ${getRelativePath(fromFile)} → ${getRelativePath(toFile)}`;
+      case 'copy_file':
+        const srcFile = args.source || args.from || 'file';
+        const destFile = args.destination || args.to || 'file';
+        return `📋 Copying ${getRelativePath(srcFile)} → ${getRelativePath(destFile)}`;
+      case 'create_directory':
+      case 'mkdir':
+        const newDir = args.path || args.directory || 'folder';
+        return `📁 Creating ${getRelativePath(newDir)}/`;
       case 'run_command':
         const cmd = args.command || '';
-        return `🖥️ Running: ${cmd.substring(0, 30)}${cmd.length > 30 ? '...' : ''}`;
+        return `🖥️  Running: ${cmd.substring(0, 50)}${cmd.length > 50 ? '...' : ''}`;
       case 'web_search':
-        return `🌐 Searching web: ${args.query || ''}`;
+        return `🌐 Searching: ${(args.query || '').substring(0, 40)}...`;
       case 'fetch_url':
-        return `🌐 Fetching ${args.url || ''}`;
+        const url = args.url || '';
+        const domain = url.match(/https?:\/\/([^\/]+)/)?.[1] || url;
+        return `🌐 Fetching ${domain.substring(0, 40)}`;
       default:
-        return null;
+        return `⚙️  ${toolName}...`;
     }
   }
 

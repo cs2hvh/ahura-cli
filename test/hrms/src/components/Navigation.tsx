@@ -29,7 +29,7 @@ export default function Navigation() {
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
         isScrolled
-          ? 'bg-white/95 backdrop-blur-md shadow-lg'
+          ? 'bg-black/80 backdrop-blur-md shadow-lg shadow-purple-500/10 border-b border-purple-500/20'
           : 'bg-transparent'
       }`}
     >
@@ -42,7 +42,7 @@ export default function Navigation() {
                 e.preventDefault();
                 handleNavClick('#home');
               }}
-              className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent hover:scale-105 transition-transform duration-200"
+              className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent hover:scale-105 transition-transform duration-200"
             >
               {GAME_INFO.title}
             </a>
@@ -57,10 +57,10 @@ export default function Navigation() {
                   e.preventDefault();
                   handleNavClick(link.href);
                 }}
-                className="text-gray-700 hover:text-purple-600 font-medium transition-colors duration-200 relative group"
+                className="text-gray-300 hover:text-purple-400 font-medium transition-colors duration-200 relative group"
               >
                 {link.name}
-                <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-purple-600 group-hover:w-full transition-all duration-300"></span>
+                <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-purple-400 to-pink-400 group-hover:w-full transition-all duration-300"></span>
               </a>
             ))}
             <a
@@ -69,7 +69,7 @@ export default function Navigation() {
                 e.preventDefault();
                 handleNavClick('#download');
               }}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2.5 rounded-full font-semibold hover:scale-105 hover:shadow-lg transition-all duration-200"
+              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2.5 rounded-full font-semibold hover:scale-105 hover:shadow-lg hover:shadow-purple-500/50 transition-all duration-200"
             >
               {CTA_BUTTONS.secondary}
             </a>
@@ -78,7 +78,7 @@ export default function Navigation() {
           <div className="md:hidden">
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="text-gray-700 hover:text-purple-600 transition-colors duration-200 p-2"
+              className="text-gray-300 hover:text-purple-400 transition-colors duration-200 p-2"
               aria-label="Toggle menu"
             >
               {isMenuOpen ? (
@@ -96,7 +96,7 @@ export default function Navigation() {
           isMenuOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
         }`}
       >
-        <div className="px-4 pt-2 pb-4 space-y-2 bg-white/95 backdrop-blur-md shadow-lg">
+        <div className="px-4 pt-2 pb-4 space-y-2 bg-black/95 backdrop-blur-md shadow-lg border-b border-purple-500/20">
           {NAVIGATION_LINKS.map((link) => (
             <a
               key={link.name}
@@ -105,7 +105,7 @@ export default function Navigation() {
                 e.preventDefault();
                 handleNavClick(link.href);
               }}
-              className="block px-4 py-3 text-gray-700 hover:text-purple-600 hover:bg-purple-50 rounded-lg font-medium transition-all duration-200"
+              className="block px-4 py-3 text-gray-300 hover:text-purple-400 hover:bg-purple-900/20 rounded-lg font-medium transition-all duration-200"
             >
               {link.name}
             </a>

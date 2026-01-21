@@ -65,25 +65,27 @@ export default function Characters() {
     <section
       id="characters"
       ref={sectionRef}
-      className="py-20 md:py-32 bg-gradient-to-b from-purple-50 to-white"
+      className="py-20 md:py-32 bg-gradient-to-b from-black via-purple-950/50 to-black relative overflow-hidden"
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-5"></div>
+      
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center mb-16">
           <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            animate={isVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 30 }}
+            animate={isVisible ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.6 }}
-            className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-gray-900 mb-4"
+            className="text-4xl md:text-5xl lg:text-6xl font-extrabold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400"
           >
             Meet the Heroes
           </motion.h2>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
-            animate={isVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-            className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto"
+            animate={isVisible ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className="text-lg md:text-xl text-gray-300 max-w-2xl mx-auto"
           >
-            Choose your champion and embark on legendary adventures
+            Choose your champion and embark on an epic journey
           </motion.p>
         </div>
 
@@ -91,84 +93,33 @@ export default function Characters() {
           variants={containerVariants}
           initial="hidden"
           animate={isVisible ? "visible" : "hidden"}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8"
         >
           {CHARACTERS.map((character, index) => (
             <motion.div
               key={index}
               variants={cardVariants}
-              whileHover={{
-                y: -10,
-                transition: { duration: 0.3 }
-              }}
-              whileTap={{ scale: 0.98 }}
-              className="group relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300"
+              whileHover={{ scale: 1.05, y: -10 }}
+              className="group relative bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-black/40 backdrop-blur-sm rounded-2xl overflow-hidden border border-purple-500/30 shadow-xl shadow-purple-500/10 hover:shadow-2xl hover:shadow-purple-500/30 hover:border-purple-500/50 transition-all duration-300"
             >
               <div className="relative h-80 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent z-10"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
                 <Image
                   src={character.imagePath}
                   alt={character.name}
                   fill
                   className="object-cover group-hover:scale-110 transition-transform duration-500"
-                  loading="lazy"
                 />
-                <div className="absolute bottom-0 left-0 right-0 p-6 z-20">
-                  <h3 className="text-2xl font-bold text-white mb-1">
-                    {character.name}
-                  </h3>
-                  <p className="text-purple-300 font-semibold">
-                    {character.role}
-                  </p>
-                </div>
               </div>
-
-              <div className="p-6">
-                <p className="text-gray-600 leading-relaxed mb-4">
+              <div className="p-6 relative z-20">
+                <h3 className="text-2xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
+                  {character.name}
+                </h3>
+                <p className="text-purple-300 font-semibold mb-3">{character.role}</p>
+                <p className="text-gray-300 text-sm leading-relaxed">
                   {character.description}
                 </p>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">Power</span>
-                    <div className="flex-1 mx-3 bg-gray-200 rounded-full h-2 overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={isVisible ? { width: `${character.stats.power}%` } : { width: 0 }}
-                        transition={{ duration: 1, delay: 0.5 + index * 0.1 }}
-                        className="h-full bg-gradient-to-r from-red-500 to-orange-500 rounded-full"
-                      />
-                    </div>
-                    <span className="text-sm font-bold text-gray-900">{character.stats.power}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">Defense</span>
-                    <div className="flex-1 mx-3 bg-gray-200 rounded-full h-2 overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={isVisible ? { width: `${character.stats.defense}%` } : { width: 0 }}
-                        transition={{ duration: 1, delay: 0.6 + index * 0.1 }}
-                        className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full"
-                      />
-                    </div>
-                    <span className="text-sm font-bold text-gray-900">{character.stats.defense}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">Speed</span>
-                    <div className="flex-1 mx-3 bg-gray-200 rounded-full h-2 overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={isVisible ? { width: `${character.stats.speed}%` } : { width: 0 }}
-                        transition={{ duration: 1, delay: 0.7 + index * 0.1 }}
-                        className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full"
-                      />
-                    </div>
-                    <span className="text-sm font-bold text-gray-900">{character.stats.speed}</span>
-                  </div>
-                </div>
               </div>
-
-              <div className="absolute inset-0 bg-gradient-to-t from-purple-600/0 to-purple-600/0 group-hover:from-purple-600/10 group-hover:to-transparent transition-all duration-300 pointer-events-none"></div>
             </motion.div>
           ))}
         </motion.div>

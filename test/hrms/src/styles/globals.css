@@ -6,8 +6,8 @@
   --color-primary: 147 51 234;
   --color-secondary: 236 72 153;
   --color-accent: 251 146 60;
-  --color-background: 255 255 255;
-  --color-foreground: 17 24 39;
+  --color-background: 10 10 15;
+  --color-foreground: 255 255 255;
   --color-muted: 156 163 175;
   
   --spacing-xs: 0.25rem;
@@ -29,13 +29,10 @@
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-background: 17 24 39;
-    --color-foreground: 255 255 255;
-  }
+  
+  --neon-purple: 168 85 247;
+  --neon-pink: 236 72 153;
+  --neon-cyan: 34 211 238;
 }
 
 * {
@@ -184,6 +181,19 @@ img {
   }
 }
 
+@keyframes neonGlow {
+  0%, 100% {
+    text-shadow: 0 0 10px rgb(var(--neon-purple) / 0.8),
+                 0 0 20px rgb(var(--neon-purple) / 0.6),
+                 0 0 30px rgb(var(--neon-purple) / 0.4);
+  }
+  50% {
+    text-shadow: 0 0 20px rgb(var(--neon-purple) / 1),
+                 0 0 30px rgb(var(--neon-purple) / 0.8),
+                 0 0 40px rgb(var(--neon-purple) / 0.6);
+  }
+}
+
 @layer utilities {
   .animate-fadeIn {
     animation: fadeIn 0.6s ease-out;
@@ -221,24 +231,40 @@ img {
     animation: scaleIn 0.4s ease-out;
   }
   
+  .animate-neonGlow {
+    animation: neonGlow 2s ease-in-out infinite;
+  }
+  
   .text-gradient {
-    @apply bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent;
+  }
+  
+  .text-neon-purple {
+    color: rgb(var(--neon-purple));
+    text-shadow: 0 0 10px rgb(var(--neon-purple) / 0.8),
+                 0 0 20px rgb(var(--neon-purple) / 0.6);
   }
   
   .bg-gradient-primary {
-    @apply bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400;
+    @apply bg-gradient-to-r from-purple-600 via-pink-500 to-cyan-500;
   }
   
   .bg-gradient-secondary {
-    @apply bg-gradient-to-br from-purple-600 to-pink-600;
+    @apply bg-gradient-to-br from-purple-900 via-purple-800 to-black;
+  }
+  
+  .bg-dark-card {
+    background: rgba(30, 20, 50, 0.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(168, 85, 247, 0.2);
   }
   
   .card {
-    @apply bg-white rounded-2xl shadow-lg p-6 transition-all duration-300;
+    @apply bg-dark-card rounded-2xl shadow-lg p-6 transition-all duration-300;
   }
   
   .card-hover {
-    @apply hover:shadow-2xl hover:-translate-y-1;
+    @apply hover:shadow-2xl hover:shadow-purple-500/20 hover:-translate-y-1 hover:border-purple-500/40;
   }
   
   .btn {
@@ -246,15 +272,15 @@ img {
   }
   
   .btn-primary {
-    @apply bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:scale-105 hover:shadow-lg;
+    @apply bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:scale-105 hover:shadow-lg hover:shadow-purple-500/50;
   }
   
   .btn-secondary {
-    @apply bg-white text-purple-600 border-2 border-purple-600 hover:bg-purple-600 hover:text-white;
+    @apply bg-transparent border-2 border-purple-500 text-purple-400 hover:bg-purple-500 hover:text-white hover:shadow-lg hover:shadow-purple-500/50;
   }
   
   .btn-outline {
-    @apply bg-transparent border-2 border-white text-white hover:bg-white hover:text-purple-600;
+    @apply bg-transparent border-2 border-purple-400 text-purple-400 hover:bg-purple-500 hover:text-white hover:shadow-lg hover:shadow-purple-500/50;
   }
   
   .section-padding {
@@ -268,24 +294,30 @@ img {
   .smooth-transition {
     @apply transition-all duration-300 ease-in-out;
   }
+  
+  .neon-border {
+    border: 2px solid rgb(var(--neon-purple));
+    box-shadow: 0 0 10px rgb(var(--neon-purple) / 0.5),
+                inset 0 0 10px rgb(var(--neon-purple) / 0.2);
+  }
 }
 
 @layer components {
   .skeleton {
-    @apply bg-gray-200 rounded animate-pulse;
+    @apply bg-gray-800 rounded animate-pulse;
   }
   
   .skeleton-text {
-    @apply h-4 bg-gray-200 rounded animate-pulse;
+    @apply h-4 bg-gray-800 rounded animate-pulse;
   }
   
   .loading-shimmer {
     background: linear-gradient(
       90deg,
-      rgba(255, 255, 255, 0) 0%,
-      rgba(255, 255, 255, 0.2) 20%,
-      rgba(255, 255, 255, 0.5) 60%,
-      rgba(255, 255, 255, 0)
+      rgba(168, 85, 247, 0) 0%,
+      rgba(168, 85, 247, 0.2) 20%,
+      rgba(168, 85, 247, 0.5) 60%,
+      rgba(168, 85, 247, 0)
     );
     animation: shimmer 2s infinite;
     background-size: 1000px 100%;
@@ -330,24 +362,27 @@ img {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgb(243 244 246);
+  background: rgb(20 20 30);
 }
 
 ::-webkit-scrollbar-thumb {
   background: rgb(147 51 234);
   border-radius: 5px;
+  box-shadow: 0 0 10px rgb(147 51 234 / 0.5);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(126 34 206);
+  background: rgb(168 85 247);
+  box-shadow: 0 0 15px rgb(168 85 247 / 0.8);
 }
 
 ::selection {
-  background: rgb(147 51 234 / 0.3);
-  color: inherit;
+  background: rgb(147 51 234 / 0.5);
+  color: rgb(255 255 255);
 }
 
 :focus-visible {
-  outline: 2px solid rgb(147 51 234);
+  outline: 2px solid rgb(168 85 247);
   outline-offset: 2px;
+  box-shadow: 0 0 10px rgb(168 85 247 / 0.5);
 }

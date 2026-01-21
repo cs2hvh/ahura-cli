@@ -76,25 +76,27 @@ export default function Features() {
     <section
       id="features"
       ref={sectionRef}
-      className="py-20 md:py-32 bg-gradient-to-b from-white to-purple-50"
+      className="py-20 md:py-32 bg-gradient-to-b from-black via-purple-950/30 to-black relative overflow-hidden"
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-5"></div>
+      
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center mb-16">
           <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            animate={isVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 30 }}
+            animate={isVisible ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.6 }}
-            className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-gray-900 mb-4"
+            className="text-4xl md:text-5xl lg:text-6xl font-extrabold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400"
           >
-            Amazing Features
+            Epic Features
           </motion.h2>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
-            animate={isVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-            transition={{ duration: 0.6, delay: 0.1 }}
-            className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto"
+            animate={isVisible ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.6, delay: 0.2 }}
+            className="text-lg md:text-xl text-gray-300 max-w-2xl mx-auto"
           >
-            Discover what makes our game an unforgettable adventure
+            Discover what makes our game extraordinary
           </motion.p>
         </div>
 
@@ -105,29 +107,21 @@ export default function Features() {
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
         >
           {FEATURES.map((feature, index) => {
-            const IconComponent = iconMap[feature.iconName];
-            
+            const Icon = iconMap[feature.icon];
             return (
               <motion.div
                 key={index}
                 variants={cardVariants}
-                whileHover={{
-                  scale: 1.05,
-                  boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
-                  transition: { duration: 0.3 }
-                }}
-                whileTap={{ scale: 0.98 }}
-                className="bg-white rounded-2xl p-8 shadow-lg hover:shadow-2xl transition-shadow duration-300 border border-purple-100"
+                whileHover={{ scale: 1.05, y: -5 }}
+                className="bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-black/40 backdrop-blur-sm rounded-2xl p-8 border border-purple-500/30 shadow-xl shadow-purple-500/10 hover:shadow-2xl hover:shadow-purple-500/30 hover:border-purple-500/50 transition-all duration-300"
               >
-                <div className="flex items-center justify-center w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl mb-6 mx-auto">
-                  {IconComponent && (
-                    <IconComponent className="text-white text-3xl" />
-                  )}
+                <div className="flex items-center justify-center w-16 h-16 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl mb-6 shadow-lg shadow-purple-500/50">
+                  {Icon && <Icon className="text-3xl text-white" />}
                 </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-3 text-center">
-                  {feature.name}
+                <h3 className="text-2xl font-bold mb-3 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
+                  {feature.title}
                 </h3>
-                <p className="text-gray-600 text-center leading-relaxed">
+                <p className="text-gray-300 leading-relaxed">
                   {feature.description}
                 </p>
               </motion.div>

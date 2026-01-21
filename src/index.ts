@@ -325,6 +325,9 @@ interface ComplexityResult {
   complexity: TaskComplexity;
   reason: string;
   confidence: number;
+  // New fields for smart routing
+  score?: number;
+  route?: 'simple' | 'complex';
 }
 
 /**
@@ -875,6 +878,55 @@ function formatMarkdownForTerminal(text: string): string {
     if (line.startsWith('  ') || line.startsWith('\n') || line.trim() === '') return line;
     return '  ' + line;
   }).join('\n');
+}
+
+// Format AI response for nice terminal display with colors
+function printFormattedResponse(text: string): void {
+  if (!text || !text.trim()) return;
+  
+  const lines = text.split('\n');
+  
+  lines.forEach(line => {
+    if (!line.trim()) {
+      console.log('');
+      return;
+    }
+    
+    let formatted = line;
+    
+    // Handle **bold** text - make it cyan
+    if (formatted.includes('**')) {
+      formatted = formatted.replace(/\*\*([^*]+)\*\*/g, (_, t) => chalk.bold.cyan(t));
+    }
+    
+    // Handle `code` - make it yellow
+    if (formatted.includes('`')) {
+      formatted = formatted.replace(/`([^`]+)`/g, (_, c) => chalk.yellow(c));
+    }
+    
+    // Handle bullet points (• or -)
+    if (formatted.trim().startsWith('•') || formatted.trim().startsWith('-')) {
+      const bulletContent = formatted.trim().replace(/^[•-]\s*/, '');
+      console.log(chalk.gray('     •') + ' ' + chalk.white(bulletContent));
+      return;
+    }
+    
+    // Handle numbered lists
+    const numMatch = formatted.trim().match(/^(\d+)\.\s*(.*)/);
+    if (numMatch) {
+      console.log(chalk.gray('     ') + chalk.yellow(numMatch[1] + '.') + ' ' + chalk.white(numMatch[2]));
+      return;
+    }
+    
+    // Handle headers (lines ending with : and short)
+    if (formatted.trim().endsWith(':') && formatted.trim().length < 50 && !formatted.includes(' ')) {
+      console.log(chalk.bold.cyan('  ' + formatted.trim()));
+      return;
+    }
+    
+    // Regular text
+    console.log(chalk.gray('  ') + chalk.white(formatted.trim()));
+  });
 }
 
 function clearLine() {
@@ -1583,6 +1635,384 @@ Let me create the files for you:
     clearLine();
     console.log('');
     console.log(`  ${chalk.red('✗')} ${error}`);
+  } finally {
+    isProcessing = false;
+  }
+}
+
+// ============ SMART COMPLEXITY DETECTION ============
+
+/**
+ * Detect task complexity using Haiku for fast, cheap analysis
+ * SIMPLE = Standard patterns, direct coding
+ * COMPLEX = Needs planning, research, architecture decisions
+ */
+async function detectComplexity(userRequest: string, projectContext: {
+  isEmptyFolder: boolean;
+  hasPackageJson: boolean;
+  framework: string;
+  fileCount: number;
+}): Promise<ComplexityResult> {
+  
+  // Quick keyword overrides (instant, no API call)
+  const requestLower = userRequest.toLowerCase();
+  
+  // Analysis/explanation tasks should NEVER go to file creation
+  // Return 'quick' complexity but the caller (buildProject) should check this
+  if (requestLower.match(/\b(analy|summar|explain|overview|codebase|structure|what is|how does|describe)\b/i)) {
+    return { complexity: 'quick', score: 1, route: 'simple', reason: 'Analysis/explanation task (use chat)', confidence: 0.95 };
+  }
+  
+  // Force simple for obvious quick tasks
+  if (requestLower.match(/^(fix|bug|error|typo|update|change|modify|add a|remove|delete)\s/i)) {
+    return { complexity: 'quick', score: 2, route: 'simple', reason: 'Quick modification task', confidence: 0.9 };
+  }
+  
+  // Use Haiku for smart detection
+  const detectionPrompt = `Determine if this coding task needs PLANNING or can be CODED DIRECTLY.
+
+REQUEST: "${userRequest}"
+
+CONTEXT:
+- Project: ${projectContext.isEmptyFolder ? 'Empty folder (new project)' : 'Existing project'}
+- Has package.json: ${projectContext.hasPackageJson}
+- Framework: ${projectContext.framework || 'Unknown'}
+- Files: ${projectContext.fileCount}
+
+CLASSIFICATION RULES:
+
+SIMPLE (code directly, score 1-4):
+- Standard CRUD apps (blog, CRM, e-commerce, dashboard, portfolio)
+- Common patterns even with multiple features (auth, forms, API routes)
+- Well-known frameworks (Next.js, React, Express, etc.)
+- Bug fixes, feature additions, modifications
+- Standard integrations (Stripe, OAuth, database)
+- Demo apps, examples, learning projects
+
+COMPLEX (needs planning, score 5-10):
+- Enterprise scale (multi-tenant, 20+ modules, complex workflows)
+- Requires research (new/unfamiliar tech, custom solutions)
+- Real-time collaboration, complex state sync
+- Security/compliance requirements (HIPAA, PCI)
+- System migrations, legacy conversions
+- Distributed systems, microservices architecture
+- Custom algorithms, AI/ML integrations
+
+Respond with JSON only:
+{"score": <1-10>, "route": "simple" or "complex", "reason": "<10 words max>"}`;
+
+  try {
+    // Use Haiku for fast, cheap detection
+    const OpenAI = (await import('openai')).default;
+    const openrouter = new OpenAI({
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY
+    });
+    
+    const response = await openrouter.chat.completions.create({
+      model: 'anthropic/claude-3-haiku',
+      messages: [{ role: 'user', content: detectionPrompt }],
+      max_tokens: 100,
+      temperature: 0.1
+    });
+    
+    const content = response.choices[0]?.message?.content || '';
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const isComplex = parsed.route === 'complex';
+      return {
+        complexity: isComplex ? 'full' : 'quick',
+        score: parsed.score || 5,
+        route: isComplex ? 'complex' : 'simple',
+        reason: parsed.reason || 'AI analysis',
+        confidence: 0.85
+      };
+    }
+  } catch (error) {
+    // Fallback: simple heuristics if API fails
+    const wordCount = userRequest.split(/\s+/).length;
+    const hasComplexKeywords = /enterprise|multi-tenant|microservice|migration|compliance|real-time collab/i.test(userRequest);
+    
+    if (hasComplexKeywords || wordCount > 50) {
+      return { complexity: 'full', score: 6, route: 'complex', reason: 'Complex requirements detected', confidence: 0.7 };
+    }
+  }
+  
+  // Default: simple for most tasks
+  return { complexity: 'quick', score: 3, route: 'simple', reason: 'Standard development task', confidence: 0.8 };
+}
+
+// ============ DIRECT CODER FLOW (for simple tasks) ============
+
+async function buildProjectSimple(prompt: string, rl: readline.Interface): Promise<void> {
+  isProcessing = true;
+  shouldAbort = false;
+  
+  if (!coderAgent) coderAgent = initializeCoderAgent();
+  
+  const filesWritten = new Set<string>();
+  
+  try {
+    console.log('');
+    console.log(chalk.cyan('━'.repeat(60)));
+    console.log(chalk.bold.green(`  ⚡ Quick Mode`));
+    console.log('');
+    
+    // Gather project context
+    let projectContext = '';
+    const hasPackageJson = fs.existsSync(path.join(currentProject, 'package.json'));
+    
+    if (hasPackageJson) {
+      printStep('📂', chalk.gray('Reading project files...'));
+      projectContext = await gatherProjectContext(currentProject);
+      clearLine();
+      console.log(chalk.gray(`  📂 Scanned project context`));
+    }
+    
+    // Build the coding prompt
+    console.log(chalk.gray(`  🧠 Thinking about approach...`));
+    
+    const codingPrompt = `
+You are a senior developer. Implement this task directly.
+
+TASK: ${prompt}
+
+PROJECT DIRECTORY: ${currentProject}
+${projectContext ? `\nPROJECT CONTEXT:\n${projectContext}` : '\nThis is a new/empty project.'}
+
+REQUIREMENTS:
+1. Write COMPLETE, working code - no placeholders or TODOs
+2. Include all necessary imports
+3. Use modern best practices
+4. Create proper file structure
+5. Add error handling
+
+For NEW projects, include:
+- package.json with all dependencies
+- Proper config files (tsconfig, etc.)
+- README.md with setup instructions
+
+IMPORTANT: Explain what you're doing BEFORE the JSON output!
+First write a brief plan (2-3 bullet points), then provide the JSON.
+
+Respond with this format:
+## Plan
+- Brief bullet 1
+- Brief bullet 2
+
+## Files
+\`\`\`json
+{
+  "operations": [
+    { "type": "create", "path": "relative/path/file.ts", "content": "full file content" }
+  ],
+  "commands": ["npm install", "npm run dev"],
+  "summary": "Brief description of what was created"
+}
+\`\`\`
+`;
+
+    // Stream the response with detailed progress
+    let responseContent = '';
+    let lastReportedLength = 0;
+    let showedThinking = false;
+    let currentFile = '';
+    
+    const response = await coderAgent.chatStream(
+      codingPrompt,
+      (chunk: string, done: boolean) => {
+        responseContent += chunk;
+        
+        // Show thinking/plan part to user
+        if (!done) {
+          // If we're in the "Plan" section, show it
+          if (responseContent.includes('## Plan') && !responseContent.includes('## Files')) {
+            if (!showedThinking) {
+              clearLine();
+              console.log('');
+              console.log(chalk.bold.white('  📋 Plan:'));
+              showedThinking = true;
+            }
+            // Stream plan bullets to user
+            const planMatch = responseContent.match(/## Plan\n([\s\S]*?)(?=## Files|$)/);
+            if (planMatch) {
+              const planText = planMatch[1].trim();
+              const bullets = planText.split('\n').filter(l => l.trim().startsWith('-'));
+              bullets.forEach((bullet, i) => {
+                const cleanBullet = bullet.trim();
+                if (cleanBullet && !responseContent.includes(`__shown_${i}__`)) {
+                  responseContent += `__shown_${i}__`;
+                  console.log(chalk.gray(`  ${cleanBullet}`));
+                }
+              });
+            }
+          }
+          
+          // Show file progress
+          if (responseContent.includes('"path":')) {
+            const pathMatches = responseContent.match(/"path"\s*:\s*"([^"]+)"/g);
+            if (pathMatches) {
+              const lastPath = pathMatches[pathMatches.length - 1].match(/"path"\s*:\s*"([^"]+)"/)?.[1];
+              if (lastPath && lastPath !== currentFile) {
+                currentFile = lastPath;
+                printProgress(`Writing ${path.basename(lastPath)}...`);
+              }
+            }
+          }
+          
+          // Periodic progress update
+          if (responseContent.length - lastReportedLength >= 1000) {
+            lastReportedLength = responseContent.length;
+            const kChars = Math.round(responseContent.length / 1000);
+            if (!currentFile) {
+              printProgress(`Generating code... (${kChars}k chars)`);
+            }
+          }
+        }
+      }
+    );
+    
+    clearLine();
+    
+    if (!response.success) {
+      throw new Error(response.error || 'Coder failed');
+    }
+    
+    // Parse and write files - with robust JSON extraction
+    const fullContent = responseContent || response.content;
+    let jsonContent: string | null = null;
+    
+    // Try extracting from code block first
+    const jsonMatch = fullContent.match(/```json\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      jsonContent = jsonMatch[1].trim();
+    } else {
+      // Try to find JSON object directly
+      const jsonStart = fullContent.indexOf('{"operations"');
+      if (jsonStart !== -1) {
+        jsonContent = fullContent.substring(jsonStart);
+        // Find the matching closing brace
+        let depth = 0;
+        let endPos = 0;
+        for (let i = 0; i < jsonContent.length; i++) {
+          if (jsonContent[i] === '{') depth++;
+          if (jsonContent[i] === '}') depth--;
+          if (depth === 0) {
+            endPos = i + 1;
+            break;
+          }
+        }
+        if (endPos > 0) {
+          jsonContent = jsonContent.substring(0, endPos);
+        }
+      }
+    }
+    
+    if (!jsonContent) {
+      // Last resort: look for any JSON-like structure
+      const anyJson = fullContent.match(/\{[\s\S]*"operations"[\s\S]*\}/);
+      jsonContent = anyJson ? anyJson[0] : null;
+    }
+    
+    if (!jsonContent) {
+      console.log(chalk.yellow('  ⚠ Could not parse structured response'));
+      console.log(chalk.gray('  Falling back to direct chat...'));
+      // Fallback to showing the text response
+      printFormattedResponse(fullContent);
+      return;
+    }
+    
+    // Try to parse, with repair for common issues
+    let result: any;
+    try {
+      result = JSON.parse(jsonContent);
+    } catch (parseError) {
+      // Try to repair common JSON issues
+      let repaired = jsonContent;
+      
+      // Fix unterminated strings - find the last complete operation
+      if (repaired.includes('"content":')) {
+        // Find all complete operations (ones with closing brace)
+        const operations: any[] = [];
+        const opRegex = /\{\s*"type"\s*:\s*"[^"]+"\s*,\s*"path"\s*:\s*"([^"]+)"\s*,\s*"content"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g;
+        let match;
+        while ((match = opRegex.exec(repaired)) !== null) {
+          try {
+            operations.push({
+              type: 'create',
+              path: match[1],
+              content: JSON.parse(`"${match[2]}"`)
+            });
+          } catch {}
+        }
+        
+        if (operations.length > 0) {
+          result = { operations, commands: [], summary: 'Partially recovered from truncated response' };
+          console.log(chalk.yellow(`  ⚠ Response was truncated, recovered ${operations.length} file(s)`));
+        } else {
+          throw parseError;
+        }
+      } else {
+        throw parseError;
+      }
+    }
+    
+    // Show file writing progress
+    console.log('');
+    console.log(chalk.bold.white('  📝 Writing files:'));
+    
+    // Write files
+    if (result.operations && Array.isArray(result.operations)) {
+      for (const op of result.operations) {
+        if (op.path && op.content) {
+          const fullPath = path.join(currentProject, op.path);
+          const dir = path.dirname(fullPath);
+          
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+          
+          fs.writeFileSync(fullPath, op.content, 'utf-8');
+          
+          // Show file with icon based on extension
+          const ext = path.extname(op.path).slice(1);
+          const icon = getFileIcon(ext);
+          console.log(chalk.green(`  ${icon} ${op.path}`));
+          filesWritten.add(op.path);
+        }
+      }
+    }
+    
+    // Show completion
+    console.log('');
+    console.log(chalk.cyan('━'.repeat(60)));
+    console.log(chalk.bold.green(`  ✅ Done!`));
+    
+    if (result.summary) {
+      console.log('');
+      console.log(chalk.white(`  ${result.summary}`));
+    }
+    
+    // Show next commands
+    if (result.commands && result.commands.length > 0) {
+      console.log('');
+      console.log(chalk.yellow('  📋 Next steps:'));
+      result.commands.forEach((cmd: string, i: number) => {
+        console.log(chalk.gray(`     ${i + 1}. ${cmd}`));
+      });
+    }
+    
+    // Context usage
+    console.log('');
+    console.log(chalk.gray(`  ${getContextBar(sessionStats.totalTokens)}`));
+    console.log('');
+    
+  } catch (error) {
+    clearLine();
+    console.log('');
+    printStep(icons.error, chalk.red(`Error: ${error}`));
   } finally {
     isProcessing = false;
   }
@@ -2455,9 +2885,83 @@ ${plan.tasks.map((t: any, i: number) => `${i + 1}. ${t.title}: ${t.description}`
 }
 
 // Main build dispatcher - AUTO-DETECTS complexity using AI
-async function buildProject(prompt: string, rl: readline.Interface): Promise<void> {
-  // Go straight to full pipeline - Haiku already decided this is complex
-  await buildProjectFull(prompt, rl);
+async function buildProject(prompt: string, rl: readline.Interface, forceMode?: 'simple' | 'complex'): Promise<void> {
+  
+  // Check for command overrides
+  let mode = forceMode;
+  let cleanPrompt = prompt;
+  
+  // /plan forces complex mode
+  if (prompt.toLowerCase().startsWith('/plan ')) {
+    mode = 'complex';
+    cleanPrompt = prompt.substring(6).trim();
+    console.log(chalk.gray('  📐 Using planner mode (forced)'));
+  }
+  // /quick forces simple mode
+  else if (prompt.toLowerCase().startsWith('/quick ')) {
+    mode = 'simple';
+    cleanPrompt = prompt.substring(7).trim();
+    console.log(chalk.gray('  ⚡ Using quick mode (forced)'));
+  }
+  
+  // Auto-detect complexity if not forced
+  if (!mode) {
+    // Gather context for detection
+    let isEmptyFolder = false;
+    let hasPackageJson = false;
+    let fileCount = 0;
+    let framework = 'Unknown';
+    
+    try {
+      const files = fs.readdirSync(currentProject);
+      hasPackageJson = files.includes('package.json');
+      fileCount = files.filter(f => !f.startsWith('.') && f !== 'node_modules').length;
+      isEmptyFolder = !hasPackageJson && fileCount < 3;
+      
+      // Detect framework
+      if (files.includes('next.config.js') || files.includes('next.config.ts')) framework = 'Next.js';
+      else if (files.includes('vite.config.ts') || files.includes('vite.config.js')) framework = 'Vite';
+      else if (files.includes('angular.json')) framework = 'Angular';
+      else if (files.includes('nuxt.config.ts')) framework = 'Nuxt';
+    } catch {
+      isEmptyFolder = true;
+    }
+    
+    // Quick detection with loading indicator
+    process.stdout.write(chalk.gray('  🧠 Analyzing task...'));
+    
+    const complexity = await detectComplexity(cleanPrompt, {
+      isEmptyFolder,
+      hasPackageJson,
+      framework,
+      fileCount
+    });
+    
+    // Clear the loading line
+    process.stdout.write('\r\x1b[K');
+    
+    mode = complexity.route;
+    
+    // Show routing decision
+    if (mode === 'simple') {
+      console.log(chalk.gray(`  ⚡ Quick mode: ${complexity.reason}`));
+    } else {
+      console.log(chalk.gray(`  📐 Planner mode: ${complexity.reason}`));
+    }
+    
+    // If this is an analysis task, use chat instead of file creation
+    if (complexity.reason.includes('Analysis') || complexity.reason.includes('explanation')) {
+      await chat(cleanPrompt);
+      return;
+    }
+  }
+  
+  // Route to appropriate flow
+  if (mode === 'simple') {
+    await buildProjectSimple(cleanPrompt, rl);
+  } else {
+    await buildProjectFull(cleanPrompt, rl);
+  }
 }
 
 // Helper to ask for confirmation
@@ -2478,6 +2982,303 @@ function askQuestion(rl: readline.Interface, question: string): Promise<string> 
   });
 }
 
+// ============ PROJECT ANALYSIS ============
+
+async function analyzeProject(): Promise<void> {
+  if (!coderAgent) {
+    coderAgent = initializeCoderAgent();
+  }
+  
+  isProcessing = true;
+  
+  console.log('');
+  console.log(chalk.cyan('━'.repeat(60)));
+  console.log(chalk.bold.white('  📊 Project Analysis'));
+  console.log(chalk.cyan('━'.repeat(60)));
+  console.log('');
+  
+  try {
+    // Gather comprehensive project info
+    process.stdout.write(chalk.gray('  📂 Scanning project structure...'));
+    
+    // Get file tree
+    const fileTree = getFileTree(currentProject, 3);  // 3 levels deep
+    
+    // Read key files
+    let packageJson: any = null;
+    let readme = '';
+    let techStack: string[] = [];
+    let framework = 'Unknown';
+    let projectType = 'Unknown';
+    
+    // Check package.json
+    const packagePath = path.join(currentProject, 'package.json');
+    if (fs.existsSync(packagePath)) {
+      try {
+        packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf-8'));
+        
+        // Extract tech stack from dependencies
+        const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
+        
+        if (deps['next']) { framework = 'Next.js'; techStack.push(`Next.js ${deps['next']}`); }
+        else if (deps['nuxt']) { framework = 'Nuxt'; techStack.push(`Nuxt ${deps['nuxt']}`); }
+        else if (deps['@angular/core']) { framework = 'Angular'; techStack.push(`Angular ${deps['@angular/core']}`); }
+        else if (deps['vue']) { framework = 'Vue'; techStack.push(`Vue ${deps['vue']}`); }
+        else if (deps['react']) { techStack.push(`React ${deps['react']}`); }
+        else if (deps['express']) { framework = 'Express'; techStack.push(`Express ${deps['express']}`); }
+        
+        if (deps['typescript']) techStack.push('TypeScript');
+        if (deps['tailwindcss']) techStack.push('Tailwind CSS');
+        if (deps['prisma'] || deps['@prisma/client']) techStack.push('Prisma');
+        if (deps['drizzle-orm']) techStack.push('Drizzle ORM');
+        if (deps['mongoose']) techStack.push('MongoDB/Mongoose');
+        if (deps['framer-motion']) techStack.push('Framer Motion');
+        if (deps['zustand']) techStack.push('Zustand');
+        if (deps['redux'] || deps['@reduxjs/toolkit']) techStack.push('Redux');
+        if (deps['trpc'] || deps['@trpc/server']) techStack.push('tRPC');
+        if (deps['stripe']) techStack.push('Stripe');
+        if (deps['next-auth'] || deps['@auth/core']) techStack.push('Auth.js');
+        
+        // Determine project type
+        if (packageJson.description) {
+          projectType = packageJson.description;
+        }
+      } catch {}
+    }
+    
+    // Check for common config files
+    const files = fs.readdirSync(currentProject);
+    if (files.includes('next.config.js') || files.includes('next.config.ts') || files.includes('next.config.mjs')) {
+      framework = 'Next.js';
+    }
+    if (files.includes('tsconfig.json') && !techStack.includes('TypeScript')) {
+      techStack.push('TypeScript');
+    }
+    if (files.includes('tailwind.config.js') || files.includes('tailwind.config.ts')) {
+      if (!techStack.some(t => t.includes('Tailwind'))) techStack.push('Tailwind CSS');
+    }
+    if (files.includes('docker-compose.yml') || files.includes('Dockerfile')) {
+      techStack.push('Docker');
+    }
+    
+    // Read README if exists
+    const readmePath = files.find(f => f.toLowerCase() === 'readme.md');
+    if (readmePath) {
+      try {
+        readme = fs.readFileSync(path.join(currentProject, readmePath), 'utf-8').substring(0, 2000);
+      } catch {}
+    }
+    
+    process.stdout.write('\r\x1b[K');  // Clear line
+    
+    // Count files by type
+    const fileStats = countFilesByType(currentProject);
+    
+    // Display results
+    console.log(chalk.bold.white('  📁 Project: ') + chalk.cyan(packageJson?.name || path.basename(currentProject)));
+    if (projectType !== 'Unknown') {
+      console.log(chalk.gray('     ') + chalk.white(projectType));
+    }
+    console.log('');
+    
+    // Tech Stack
+    console.log(chalk.bold.white('  🛠️  Tech Stack:'));
+    if (techStack.length > 0) {
+      techStack.forEach(tech => {
+        console.log(chalk.gray('     • ') + chalk.green(tech));
+      });
+    } else {
+      console.log(chalk.gray('     (Unable to detect)'));
+    }
+    console.log('');
+    
+    // File Statistics
+    console.log(chalk.bold.white('  📊 File Statistics:'));
+    const sortedStats = Object.entries(fileStats)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8);
+    sortedStats.forEach(([ext, count]) => {
+      const bar = '█'.repeat(Math.min(count, 20));
+      console.log(chalk.gray(`     ${ext.padEnd(8)} `) + chalk.blue(bar) + chalk.gray(` ${count}`));
+    });
+    console.log('');
+    
+    // File Structure (simplified)
+    console.log(chalk.bold.white('  📂 Structure:'));
+    const topLevel = files
+      .filter(f => !f.startsWith('.') && f !== 'node_modules' && f !== '.next' && f !== 'dist')
+      .slice(0, 12);
+    topLevel.forEach(f => {
+      const fullPath = path.join(currentProject, f);
+      const isDir = fs.statSync(fullPath).isDirectory();
+      const icon = isDir ? '📁' : getFileIcon(path.extname(f).slice(1));
+      console.log(chalk.gray(`     ${icon} `) + (isDir ? chalk.blue(f + '/') : chalk.white(f)));
+    });
+    if (files.length > 12) {
+      console.log(chalk.gray(`     ... and ${files.length - 12} more`));
+    }
+    console.log('');
+    
+    // Now ask AI for deeper analysis
+    process.stdout.write(chalk.gray('  🧠 Analyzing codebase...'));
+    
+    // Read key source files for better analysis
+    let keyFileContents = '';
+    const srcDir = path.join(currentProject, 'src');
+    const appDir = path.join(currentProject, 'app');
+    const pagesDir = path.join(currentProject, 'pages');
+    
+    // Find main entry files
+    const entryFiles = [
+      'src/app/page.tsx', 'src/app/page.ts', 'src/app/page.jsx', 'src/app/page.js',
+      'app/page.tsx', 'app/page.ts', 'app/page.jsx', 'app/page.js',
+      'pages/index.tsx', 'pages/index.ts', 'pages/index.jsx', 'pages/index.js',
+      'src/index.tsx', 'src/index.ts', 'src/main.tsx', 'src/main.ts',
+      'src/App.tsx', 'src/App.ts', 'src/App.jsx', 'src/App.js',
+      'index.ts', 'index.js', 'main.ts', 'main.js', 'server.ts', 'server.js'
+    ];
+    
+    for (const file of entryFiles) {
+      const fullPath = path.join(currentProject, file);
+      if (fs.existsSync(fullPath)) {
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          keyFileContents += `\n--- ${file} ---\n${content.substring(0, 2000)}\n`;
+          if (keyFileContents.length > 6000) break;
+        } catch {}
+      }
+    }
+    
+    // Also read a few component files if they exist
+    const componentDirs = ['src/components', 'components', 'src/app', 'app'];
+    for (const compDir of componentDirs) {
+      const fullDir = path.join(currentProject, compDir);
+      if (fs.existsSync(fullDir)) {
+        try {
+          const compFiles = fs.readdirSync(fullDir)
+            .filter(f => f.endsWith('.tsx') || f.endsWith('.ts') || f.endsWith('.jsx') || f.endsWith('.js'))
+            .slice(0, 3);
+          for (const cf of compFiles) {
+            if (keyFileContents.length > 8000) break;
+            try {
+              const content = fs.readFileSync(path.join(fullDir, cf), 'utf-8');
+              keyFileContents += `\n--- ${compDir}/${cf} ---\n${content.substring(0, 1500)}\n`;
+            } catch {}
+          }
+        } catch {}
+      }
+    }
+    
+    const analysisPrompt = `Analyze this project and provide insights. DO NOT output any tool calls or XML - just provide the analysis directly.
+
+PROJECT: ${packageJson?.name || path.basename(currentProject)}
+FRAMEWORK: ${framework}
+TECH STACK: ${techStack.join(', ') || 'Unknown'}
+
+FILE STRUCTURE:
+${fileTree}
+
+${readme ? `README:\n${readme.substring(0, 800)}\n` : ''}
+
+${packageJson?.scripts ? `SCRIPTS: ${Object.keys(packageJson.scripts).join(', ')}\n` : ''}
+
+KEY SOURCE FILES:
+${keyFileContents || '(No source files found)'}
+
+Based on the actual code above, provide a specific analysis:
+
+**Purpose**: What does this project do? (based on actual components/code)
+**Architecture**: How is it organized? (routes, components, API, etc.)  
+**Key Features**: List 3-5 specific features you see in the code
+**Status**: Complete, MVP, in-progress, or starter template?
+**Next Steps**: 2-3 specific things to build next
+
+Be concise. 1-2 sentences per section. Reference actual file names and components.`;
+
+    let response = '';
+    const result = await coderAgent.chatStream(
+      analysisPrompt,
+      (chunk: string, done: boolean) => {
+        if (!done && chunk) {
+          response += chunk;
+        }
+      }
+    );
+    
+    process.stdout.write('\r\x1b[K');  // Clear line
+    
+    // Display AI analysis
+    console.log(chalk.bold.white('  🔍 Analysis:'));
+    console.log('');
+    
+    // Format and display the response with proper styling
+    const content = response || result.content || '';
+    printFormattedResponse(content);
+    
+    console.log('');
+    console.log(chalk.cyan('━'.repeat(60)));
+    console.log(chalk.gray(`  ${getContextBar(sessionStats.totalTokens)}`));
+    console.log('');
+    
+  } catch (error) {
+    process.stdout.write('\r\x1b[K');
+    console.log(chalk.red(`  ✗ Error: ${error}`));
+  } finally {
+    isProcessing = false;
+  }
+}
+
+// Helper: Count files by extension
+function countFilesByType(dir: string, stats: Record<string, number> = {}, depth = 0): Record<string, number> {
+  if (depth > 5) return stats;
+  
+  try {
+    const items = fs.readdirSync(dir);
+    for (const item of items) {
+      if (item.startsWith('.') || item === 'node_modules' || item === '.next' || item === 'dist') continue;
+      
+      const fullPath = path.join(dir, item);
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+          countFilesByType(fullPath, stats, depth + 1);
+        } else {
+          const ext = path.extname(item).toLowerCase() || 'other';
+          stats[ext] = (stats[ext] || 0) + 1;
+        }
+      } catch {}
+    }
+  } catch {}
+  
+  return stats;
+}
+
+// Helper: Get file tree as string
+function getFileTree(dir: string, maxDepth = 3, depth = 0, prefix = ''): string {
+  if (depth > maxDepth) return '';
+  
+  let result = '';
+  try {
+    const items = fs.readdirSync(dir)
+      .filter(f => !f.startsWith('.') && f !== 'node_modules' && f !== '.next' && f !== 'dist')
+      .slice(0, 15);
+    
+    items.forEach((item, i) => {
+      const isLast = i === items.length - 1;
+      const fullPath = path.join(dir, item);
+      const isDir = fs.statSync(fullPath).isDirectory();
+      
+      result += `${prefix}${isLast ? '└── ' : '├── '}${item}${isDir ? '/' : ''}\n`;
+      
+      if (isDir && depth < maxDepth) {
+        result += getFileTree(fullPath, maxDepth, depth + 1, prefix + (isLast ? '    ' : '│   '));
+      }
+    });
+  } catch {}
+  
+  return result;
+}
+
 // ============ CHAT FUNCTION (with context and tools) ============
 
 async function chat(message: string): Promise<void> {
@@ -2492,6 +3293,54 @@ async function chat(message: string): Promise<void> {
   
   console.log('');
   
+  // Detect request type for immediate acknowledgment
+  const lowerMsg = message.toLowerCase();
+  const isQuestion = /^(can you|could you|would you|will you|please|hey|hi|can u|could u)\b/i.test(message.trim());
+  const isChangeRequest = /\b(change|update|modify|make|add|remove|fix|create|delete|convert|switch|set)\b/i.test(lowerMsg);
+  const hasTheme = /\b(theme|color|dark|light|neon|purple|blue|green|red|black|white|style|design)\b/i.test(lowerMsg);
+  
+  // Show immediate friendly acknowledgment for action requests
+  if (isQuestion && (isChangeRequest || hasTheme)) {
+    // Generate a quick contextual acknowledgment
+    const actionWord = lowerMsg.includes('fix') ? 'fix' :
+                      lowerMsg.includes('change') ? 'update' :
+                      lowerMsg.includes('add') ? 'add' :
+                      lowerMsg.includes('remove') || lowerMsg.includes('delete') ? 'remove' :
+                      lowerMsg.includes('create') ? 'create' : 'update';
+    
+    const themeWord = lowerMsg.includes('neon') ? 'neon' :
+                     lowerMsg.includes('dark') ? 'dark' :
+                     lowerMsg.includes('light') ? 'light' :
+                     lowerMsg.includes('purple') ? 'purple' :
+                     lowerMsg.includes('blue') ? 'blue' :
+                     lowerMsg.includes('green') ? 'green' : '';
+    
+    const targetWord = lowerMsg.includes('homepage') || lowerMsg.includes('home page') ? 'homepage' :
+                      lowerMsg.includes('newsletter') ? 'newsletter' :
+                      lowerMsg.includes('header') ? 'header' :
+                      lowerMsg.includes('footer') ? 'footer' :
+                      lowerMsg.includes('button') ? 'button' :
+                      lowerMsg.includes('nav') ? 'navigation' :
+                      lowerMsg.includes('page') ? 'page' : 'that';
+    
+    const acknowledgments = [
+      `Sure! I'll ${actionWord} the ${targetWord}${themeWord ? ` to ${themeWord}` : ''} for you! 🎨`,
+      `Got it! Working on ${themeWord ? `a ${themeWord} theme` : 'that'} for the ${targetWord}... ✨`,
+      `On it! Let me ${actionWord} the ${targetWord}${themeWord ? ` with ${themeWord} styling` : ''}. 🎯`,
+      `Absolutely! I'll make the ${targetWord}${themeWord ? ` ${themeWord}` : ''} look great! 💫`,
+    ];
+    
+    const ack = acknowledgments[Math.floor(Math.random() * acknowledgments.length)];
+    console.log(chalk.cyan(`  ${ack}`));
+    console.log('');
+  } else if (isChangeRequest) {
+    console.log(chalk.cyan(`  Sure, working on that! 🔧`));
+    console.log('');
+  } else {
+    // Just show thinking for non-action requests
+    process.stdout.write(chalk.gray('  🧠 Thinking...'));
+  }
+  
   let response = '';
   
   try {
@@ -2505,6 +3354,7 @@ async function chat(message: string): Promise<void> {
       const fullPath = path.isAbsolute(imagePath) ? imagePath : path.join(currentProject, imagePath);
       
       if (fs.existsSync(fullPath)) {
+        process.stdout.write('\r\x1b[K');
         process.stdout.write(chalk.cyan('  🖼️  Analyzing image...'));
         
         const imageBuffer = fs.readFileSync(fullPath);
@@ -2529,7 +3379,6 @@ Then provide actionable guidance on how to recreate it.`;
         // Stream directly to terminal
         let firstChunk = true;
         console.log('');
-        process.stdout.write('  ');
         
         const result = await coderAgent.chatWithVision(
           visionPrompt,
@@ -2538,12 +3387,13 @@ Then provide actionable guidance on how to recreate it.`;
           (chunk: string, done: boolean) => {
             if (!done && chunk) {
               response += chunk;
-              process.stdout.write(chalk.white(chunk));
             }
           }
         );
         
-        console.log('\n');
+        // Format and display the response
+        printFormattedResponse(response);
+        console.log('');
         
         addToHistory('assistant', response, result?.tokensUsed);
         
@@ -2559,6 +3409,8 @@ Then provide actionable guidance on how to recreate it.`;
     // Detect if this is a fix/edit request
     const isFixRequest = /\b(fix|debug|repair|broken|not working|doesn't work|error|bug|issue|wrong)\b/i.test(message);
     const isEditRequest = /\b(update|change|modify|edit|refactor|improve|add to|remove from)\b/i.test(message);
+    const isQuestion = /^(can you|could you|would you|will you|please|hey|hi)\b/i.test(message.trim());
+    const isActionRequest = isFixRequest || isEditRequest || /\b(make|change|update|modify|add|create|delete|remove|green|blue|red|color|theme|style)\b/i.test(message);
     
     // Initialize memory manager if not done
     if (!memoryManager) {
@@ -2571,8 +3423,39 @@ Then provide actionable guidance on how to recreate it.`;
     // Get todo context
     const todoContext = todoManager ? todoManager.toContext() : '';
     
-    // Claude Code style system prompt
+    // Friendly, conversational prompt
+    const conversationalInstructions = `
+# Communication Style
+Be friendly, warm, and conversational. You're a helpful coding buddy, not a cold machine.
+
+${isQuestion ? `The user asked a question/request politely. Start with a brief friendly acknowledgment like:
+- "Sure! I'll..." or "Of course! Let me..." or "Absolutely! I'm going to..."
+- "Got it! Working on..." or "No problem! I'll..."
+Don't be overly enthusiastic, just warm and professional.` : ''}
+
+${isActionRequest ? `
+# When Making Changes
+1. FIRST: Briefly acknowledge what you're going to do (1 short sentence)
+2. THEN: Do the work (read files, make changes)
+3. FINALLY: Summarize what you did in a friendly way
+
+Example response flow:
+"Sure! I'll update the newsletter to a dark theme. 🎨
+
+[does the work]
+
+Done! I updated Newsletter.tsx with a sleek black and white theme:
+• Changed the background to solid black
+• Updated all text to white/gray
+• Made the button white with black text
+
+The newsletter section should now have that clean dark look you wanted!"
+` : ''}
+
+IMPORTANT: Don't just output the result - have a conversation!`;
+
     const prompt = `${CLAUDE_CODE_SYSTEM_PROMPT}
+${conversationalInstructions}
 
 # Environment
 Working directory: ${currentProject}
@@ -2603,6 +3486,7 @@ User: ${message}`;
     
     // Stream directly to terminal - Claude Code style
     let isFirstChunk = true;
+    let lastProgressLength = 0;
     
     const result = await coderAgent.chatWithTools(
       prompt,
@@ -2610,18 +3494,21 @@ User: ${message}`;
         if (!done && chunk) {
           if (chunk.startsWith('__TOOL__')) {
             const progressInfo = chunk.replace('__TOOL__', '');
-            if (!isFirstChunk) {
-              process.stdout.write('\n');
-            }
-            process.stdout.write(chalk.gray(`  ${progressInfo}\r`));
+            // Clear the line before showing new progress
+            process.stdout.write('\r\x1b[K');  // Clear entire line
+            process.stdout.write(chalk.gray(`  ${progressInfo}`));
+            lastProgressLength = progressInfo.length + 2;
           } else {
+            // Clear any tool progress line before showing response
+            if (lastProgressLength > 0) {
+              process.stdout.write('\r\x1b[K');  // Clear line
+              lastProgressLength = 0;
+            }
             if (isFirstChunk) {
               console.log('');
-              process.stdout.write('  ');
               isFirstChunk = false;
             }
             response += chunk;
-            process.stdout.write(chalk.white(chunk));
           }
         }
       },
@@ -2629,10 +3516,13 @@ User: ${message}`;
       true
     );
     
-    if (!isFirstChunk) {
+    // Format and display the response nicely
+    if (response) {
       console.log('');
+      printFormattedResponse(response);
     }
     
+    console.log('');
     addToHistory('assistant', response, result?.tokensUsed);
     
     // Show context bar (concise)
@@ -3055,12 +3945,35 @@ async function processInput(input: string, rl: readline.Interface): Promise<bool
   const lowerInput = sanitizedInput.toLowerCase();
   
   // Keywords that indicate EXPLANATION/QUESTION (should NOT create files)
+  // Including common typos
   const explainKeywords = [
     'explain', 'what is', 'what does', 'how does', 'how do', 'why', 'tell me',
     'describe', 'show me', 'help me understand', 'walk me through',
-    'analyze', 'analyse', 'summarize', 'summarise', 'overview',
-    'list', 'what are', 'can you tell', 'could you tell'
+    'analyze', 'analyse', 'analye', 'analize', 'analyize',  // typo variants
+    'summarize', 'summarise', 'summerize', 'sumarize',      // typo variants
+    'overview', 'overvew',
+    'list', 'what are', 'can you tell', 'could you tell',
+    'codebase', 'code base', 'coe base', 'codbase',  // typo variants
+    'structure', 'architecture'
   ];
+  
+  // Check if user wants comprehensive project analysis
+  // More flexible patterns to catch typos like "coe base", "codbase", etc.
+  const analysisPatterns = [
+    /\b(analy[sz]e?|overview|summarize?|about)\b.*\b(project|code\s*base|coe\s*base|codbase|repo|repository|app|application)\b/i,
+    /\b(project|code\s*base|coe\s*base|codbase|repo|repository|app|application)\b.*\b(analy[sz]e?|overview|summary|about)\b/i,
+    /^(analy[sz]e?|overview|what'?s? this|about this)\s*(project|code\s*base|coe\s*base|code|app)?$/i,
+    /^analy[sz]e?\s+(again|more|detail)/i,  // "analyse again", "analyze more detail"
+    /^tell\s+(me\s+)?(about|more)/i  // "tell me about", "tell more"
+  ];
+  
+  const wantsProjectAnalysis = analysisPatterns.some(p => p.test(lowerInput.trim())) ||
+    lowerInput.trim() === 'analyse' || lowerInput.trim() === 'analyze';
+  
+  if (wantsProjectAnalysis) {
+    await analyzeProject();
+    return true;
+  }
   
   // If user wants explanation, ALWAYS use chat (no file creation)
   const wantsExplanation = explainKeywords.some(kw => lowerInput.includes(kw));

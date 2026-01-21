@@ -57,8 +57,10 @@ export default function Newsletter() {
   };
 
   return (
-    <section id="download" className="py-20 md:py-32 bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section id="download" className="py-20 md:py-32 bg-gradient-to-b from-black via-purple-950/30 to-black relative overflow-hidden">
+      <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-5"></div>
+      
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -67,15 +69,15 @@ export default function Newsletter() {
           className="text-center"
         >
           <div className="flex justify-center mb-6">
-            <div className="bg-white/20 backdrop-blur-sm p-4 rounded-full">
+            <div className="bg-gradient-to-br from-purple-600 to-pink-600 p-4 rounded-full shadow-lg shadow-purple-500/50">
               <HiMail className="text-5xl text-white" />
             </div>
           </div>
 
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-white mb-4">
+          <h2 className="text-4xl md:text-5xl lg:text-6xl font-extrabold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400">
             Stay Updated
           </h2>
-          <p className="text-lg md:text-xl text-white/90 mb-8 max-w-2xl mx-auto">
+          <p className="text-lg md:text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
             Subscribe to our newsletter for exclusive updates, new character releases, special events, and insider tips!
           </p>
 
@@ -92,7 +94,7 @@ export default function Newsletter() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your email"
-                  className="w-full px-6 py-4 rounded-full text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-4 focus:ring-white/50 transition-all duration-200"
+                  className="w-full px-6 py-4 rounded-full bg-purple-900/30 backdrop-blur-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-200 border border-purple-500/30"
                   aria-label="Email address"
                   aria-describedby={message ? 'newsletter-message' : undefined}
                   disabled={isLoading}
@@ -103,7 +105,7 @@ export default function Newsletter() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 disabled={isLoading}
-                className="bg-white text-purple-600 px-8 py-4 rounded-full font-bold text-lg shadow-2xl hover:shadow-white/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-8 py-4 rounded-full font-bold text-lg shadow-2xl shadow-purple-500/50 hover:shadow-purple-500/80 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 aria-label="Subscribe to newsletter"
               >
                 {isLoading ? (
@@ -129,8 +131,8 @@ export default function Newsletter() {
                 aria-live="polite"
                 className={`mt-4 p-4 rounded-lg text-sm font-medium ${
                   message.type === 'success'
-                    ? 'bg-green-500/20 text-white border border-green-400/30'
-                    : 'bg-red-500/20 text-white border border-red-400/30'
+                    ? 'bg-purple-900/40 text-purple-200 border border-purple-500/30'
+                    : 'bg-red-900/40 text-red-200 border border-red-500/30'
                 }`}
               >
                 {message.text}
@@ -138,7 +140,7 @@ export default function Newsletter() {
             )}
           </form>
 
-          <p className="text-white/70 text-sm mt-6">
+          <p className="text-gray-500 text-sm mt-6">
             We respect your privacy. Unsubscribe at any time.
           </p>
         </motion.div>
